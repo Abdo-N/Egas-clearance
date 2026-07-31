@@ -22,19 +22,27 @@ cd backend
 npm install
 cp .env.example .env        # edit MONGO_URI if not using local MongoDB
 npm run seed                # creates departments + mock AD users
-npm run dev                 # http://localhost:4000
 
-# Frontend (separate terminal)
-cd frontend
+# Frontend
+cd ../frontend
 npm install
-npm run dev                 # http://localhost:5173
+
+# Back at the repo root: runs both dev servers together
+cd ..
+npm install
+npm run dev                 # backend on :4000, frontend on :5173
 ```
+
+(`npm run dev` at the repo root uses `concurrently` to start both — you can
+still run `npm run dev` inside `backend/` and `frontend/` separately in two
+terminals if you prefer.)
 
 Open http://localhost:5173. Everyone's password is `Passw0rd!`.
 
 | Username | Role | Notes |
 |---|---|---|
-| `sara.employee` | employee | submits a clearance request |
+| `sara.employee` | employee | fresh account, no request submitted yet |
+| `mohamed.retiring` | employee | all 12 non-IT departments already completed — log in as `it.reviewer` to demo the final IT gate directly |
 | `admin` | admin | can check off any department, for testing |
 | `it.reviewer` | reviewer | IT department, the 9-step ordered checklist |
 | `<departmentKey>.reviewer` | reviewer | every other seeded department (see `backend/src/seed/users.data.js`) |

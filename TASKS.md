@@ -43,7 +43,7 @@ hours is a much bigger hit to the timeline than it was with 5.
 You're the floater: fix the one known bug, get the app somewhere that isn't
 just your laptop, then review and rehearse.
 
-1. **[Core] Fix the admin department-picker bug.**
+1. **[Core] Fix the admin department-picker bug. — DONE, see `PROJECT_STATUS.md`.**
    File: `frontend/src/pages/ReviewerDashboard.jsx`.
    Bug: `const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey || user.role === "admin")`
    always matches the *first* department in the array for an admin (since
@@ -88,6 +88,10 @@ just your laptop, then review and rehearse.
    order that shows the IT-must-be-last rule actually blocking a too-early
    check. Rehearse it once end to end Monday morning on the deployed version,
    not localhost.
+   *Seeded demo account `mohamed.retiring` (see `PROJECT_STATUS.md`) already
+   has all 12 non-IT departments completed, so the script can jump straight to
+   `it.reviewer` checking off IT's 9 items and showing the final gate — no
+   need to click through every other department live.*
 
 ---
 

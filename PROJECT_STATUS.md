@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-07-31 (initial scaffold, by Nader + Claude).
+Last updated: 2026-07-31 (admin bug fix + demo prep, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -15,8 +15,9 @@ Update this file whenever a task moves — don't let it go stale.
       is completed.
 - [x] Seed data: all 13 departments (real names, confirmed complete), IT's
       exact 9-step ordered checklist, generic single-item placeholder for the
-      other 12, 15 mock AD users (1 employee, 1 admin, 1 reviewer per
-      department).
+      other 12, 16 mock AD users (2 employees — `sara.employee` fresh,
+      `mohamed.retiring` demo-ready with everything but IT done — 1 admin, 1
+      reviewer per department).
 - [x] Frontend: login, employee dashboard (submit + status grid), reviewer
       dashboard (pending list + checklist check-off), Arabic/English toggle
       with RTL, defaults to Arabic.
@@ -27,14 +28,40 @@ Update this file whenever a task moves — don't let it go stale.
       request submission, department check-off, and the IT order/final-gate
       rule all verified live end to end (both backend and frontend running
       against it).
+- [x] **Fixed the admin department-picker bug** in `ReviewerDashboard.jsx`
+      (was in "Known bugs" below). Admins now get a picker screen (department
+      name + status badge, one button per department) between the request
+      list and the checklist instead of always landing on Security. Reviewers
+      are unaffected — their active department is still always
+      `user.departmentKey`.
+- [x] **Fixed MongoDB Atlas connection failures caused by local DNS.**
+      `backend/src/server.js` now points Node's DNS resolver at `8.8.8.8` /
+      `1.1.1.1` before connecting, because some local networks' default
+      resolvers were dropping the TXT/SRV lookups `mongodb+srv://` needs
+      (`queryTxt ETIMEOUT`) even though plain A-record lookups worked fine.
+- [x] **Employee dashboard now shows a horizontal progress bar** instead of a
+      status table — one step per department in order, turning green with a
+      ✓ once that department's `status` is `completed`. Works in both LTR and
+      RTL (Arabic renders it right-to-left automatically via the existing
+      `dir` attribute).
+- [x] **Added a demo-ready seeded account, `mohamed.retiring`.** Its request
+      (created by `backend/src/seed/seed.js`) has all 12 non-IT departments
+      already completed and IT untouched, so Monday's demo can go straight to
+      showing the IT-must-be-last gate without clicking through every other
+      department live. Log in as `it.reviewer` to work that request's
+      checklist.
+- [x] **Added a root-level `npm run dev`** (`concurrently`) that starts the
+      backend and frontend together in one terminal with color-coded,
+      prefixed output. Running each inside `backend/`/`frontend/` separately
+      still works too.
 
 ## Team update
 
 **Team is now 3 people: Nader (lead), Ziad, Jana.** Habiba and Khaled's
 former tasks were redistributed, not dropped — see `TASKS.md` for the full,
 detailed breakdown with Core vs. Stretch priority tags. Short version:
-- Nader: fix the admin department-picker bug (`ReviewerDashboard.jsx`),
-  deploy backend + frontend, review PRs, own the demo script.
+- Nader: admin department-picker bug is fixed — remaining: deploy backend +
+  frontend, review PRs, own the demo script.
 - Ziad: backend input validation, smoke-testing the deployed backend, and
   (stretch) the history endpoint + admin department-edit endpoints.
 - Jana: confirmation dialog on IT's final step, loading/error states, full
@@ -42,11 +69,8 @@ detailed breakdown with Core vs. Stretch priority tags. Short version:
 
 ## Known bugs
 
-- [ ] **Admin can only act on the first department (Security) of a request,
-      regardless of intent.** `ReviewerDashboard.jsx`'s department lookup has
-      `|| user.role === "admin"` in a `.find()`, which matches the first
-      array element for every admin. Assigned to Nader, in progress — see
-      `TASKS.md`.
+None currently known — see "Done" above for the admin department-picker bug
+that was fixed.
 
 ## Blocked / needs real-world input (not solvable by writing more code)
 
