@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -63,20 +63,24 @@ export default function EmployeeDashboard() {
                 {request.status === "completed" ? t("employee.statusCompleted") : t("employee.statusInProgress")}
               </strong>
             </p>
-            <table className="dept-table">
-              <tbody>
-                {request.departments.map((d) => (
-                  <tr key={d.departmentKey}>
-                    <td>{isAr ? d.name_ar : d.name_en}</td>
-                    <td>
-                      <span className={`badge ${d.status}`}>
-                        {d.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="progress-bar">
+              {request.departments.map((d, idx) => (
+                <Fragment key={d.departmentKey}>
+                  <div className="progress-step">
+                    <div
+                      className={`step-circle ${d.status}`}
+                      title={d.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+                    >
+                      {d.status === "completed" ? "✓" : idx + 1}
+                    </div>
+                    <div className="step-label">{isAr ? d.name_ar : d.name_en}</div>
+                  </div>
+                  {idx < request.departments.length - 1 && (
+                    <div className={`step-connector ${d.status === "completed" ? "completed" : ""}`} />
+                  )}
+                </Fragment>
+              ))}
+            </div>
           </div>
         )}
       </main>
