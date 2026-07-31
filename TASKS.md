@@ -10,21 +10,46 @@ this sprint is to get it running on your own machine, understand it, and push
 it from "prototype" to "demo-ready." Read `CLAUDE.md` and `README.md` in the
 repo root before picking anything up here.
 
-**Everyone, before anything else (Friday):**
-1. Install Node.js 18+ and either local MongoDB Community Server or a free
-   MongoDB Atlas cluster. *Look up: "install MongoDB Community Edition"* or
-   *"MongoDB Atlas free tier setup."*
-   Note: If you have Claude Code installed, you can literally ask it "help me
-   install MongoDB / Node.js on my machine" and it will walk you through it.
-2. Clone the repo, follow the Quick Start in `README.md`, get both servers
-   running and log in as `sara.employee` / `Passw0rd!`. If this doesn't work,
-   post in the group chat before doing anything else — a broken local setup
-   blocks everything downstream.
+**Everyone, install before Friday's sync (don't do this live, it wastes group
+time):**
+- **Node.js 18+** (installs `npm` automatically) &mdash; *search "install
+  Node.js LTS [your OS]"*.
+- **Git** &mdash; *search "install git [your OS]"*. If you've genuinely never
+  used git: *search "git clone commit push pull request beginner tutorial"*,
+  15 minutes, watch it before Friday not during.
+- **A GitHub account**, and accept Nader's collaborator invite (check email).
+- **VS Code** (or any code editor) &mdash; *search "install VS Code"*.
+- Optional but useful: **Postman** (for testing backend endpoints without a
+  frontend) and **MongoDB Compass** (a GUI to browse the database visually)
+  &mdash; *search "install Postman"* / *"install MongoDB Compass"*.
+
+**Baseline things worth knowing before you open any code file** &mdash; you
+don't need to master these, just recognize them:
+- What a terminal/command line is, and how to `cd` into a folder and run a
+  command like `npm install`.
+- What "localhost" means &mdash; a server running on your own machine, not
+  the internet. `localhost:4000` is the backend, `localhost:5173` is the
+  frontend, and they only work while `npm run dev` is running in a terminal.
+- The basic git loop: pull the latest changes, make a branch, commit your
+  work, push the branch, open a pull request. You'll do this every day of
+  the sprint, so it's worth 15 minutes now over guessing later.
+
+**Everyone, once installed (Friday):**
+1. Clone the repo (`git clone <url>`), follow the Quick Start in `README.md`,
+   get both servers running and log in as `sara.employee` / `Passw0rd!`. If
+   this doesn't work, post in the group chat before doing anything else — a
+   broken local setup blocks everything downstream.
+2. Read, in this order: `CLAUDE.md` &rarr; `README.md` &rarr; your own section
+   below in this file.
 3. Skim `backend/src/models/*.js` and `frontend/src/pages/*.jsx` once, even if
    they're not your area, so you know roughly what exists.
 
-If you get stuck at any point, ask Claude Code directly — paste the error and
-say what you were trying to do. That's faster than guessing.
+If you get stuck at any point, ask Claude Code directly — paste the exact
+error message and say what you were trying to do. That's faster than
+guessing, and it's faster than waiting for someone else to be free. Don't sit
+stuck alone for more than ~20-30 minutes before posting in the group chat —
+getting stuck on setup is normal for a first fullstack project, budget real
+time for it Friday instead of assuming it'll be quick.
 
 ---
 
