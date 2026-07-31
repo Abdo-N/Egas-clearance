@@ -29,6 +29,7 @@
     "employee": "Employee",
     "open": "Open",
     "backToList": "Back to list",
+    "selectDepartment": "Select a department to review",
     "itemBlockedOrder": "Complete previous items first",
     "itemBlockedFinal": "All other departments must finish before this can be checked",
     "checklistFor": "Checklist for"

@@ -29,6 +29,7 @@
     "employee": "الموظف",
     "open": "فتح",
     "backToList": "الرجوع للقائمة",
+    "selectDepartment": "اختر القسم المطلوب مراجعته",
     "itemBlockedOrder": "يجب إتمام العناصر السابقة أولاً",
     "itemBlockedFinal": "يجب أن تنتهي جميع الأقسام الأخرى قبل تحديد هذا العنصر",
     "checklistFor": "قائمة الفحص لـ"

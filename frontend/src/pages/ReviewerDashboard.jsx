@@ -11,6 +11,7 @@ export default function ReviewerDashboard() {
   const { user, logout } = useAuth();
   const [requests, setRequests] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedDeptKey, setSelectedDeptKey] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
 
   async function loadList() {
@@ -23,11 +24,22 @@ export default function ReviewerDashboard() {
   }, []);
 
   const selected = requests.find((r) => r._id === selectedId);
-  const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey || user.role === "admin"); //bug
+  const activeDeptKey = user.role === "admin" ? selectedDeptKey : user.departmentKey;
+  const myDept = selected?.departments.find((d) => d.departmentKey === activeDeptKey);
+
+  function openRequest(id) {
+    setSelectedId(id);
+    setSelectedDeptKey(null);
+  }
+
+  function backToList() {
+    setSelectedId(null);
+    setSelectedDeptKey(null);
+  }
 
   async function handleCheck(itemKey, checked) {
-    if (!selected) return;
-    const deptKey = user.role === "admin" ? myDept.departmentKey : user.departmentKey;
+    if (!selected || !myDept) return;
+    const deptKey = myDept.departmentKey;
     setBusyKey(itemKey);
     try {
       const { data } = await client.patch(
@@ -62,7 +74,26 @@ export default function ReviewerDashboard() {
               {requests.map((r) => (
                 <li key={r._id}>
                   {t("reviewer.employee")}: {r.employeeFullName}
-                  <button onClick={() => setSelectedId(r._id)}>{t("reviewer.open")}</button>
+                  <button onClick={() => openRequest(r._id)}>{t("reviewer.open")}</button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {selected && user.role === "admin" && !selectedDeptKey && (
+          <>
+            <button onClick={backToList}>&larr; {t("reviewer.backToList")}</button>
+            <h2>{selected.employeeFullName}</h2>
+            <h3>{t("reviewer.selectDepartment")}</h3>
+            <ul className="request-list">
+              {selected.departments.map((d) => (
+                <li key={d.departmentKey}>
+                  {isAr ? d.name_ar : d.name_en}{" "}
+                  <span className={`badge ${d.status}`}>
+                    {d.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+                  </span>
+                  <button onClick={() => setSelectedDeptKey(d.departmentKey)}>{t("reviewer.open")}</button>
                 </li>
               ))}
             </ul>
@@ -71,7 +102,7 @@ export default function ReviewerDashboard() {
 
         {selected && myDept && (
           <>
-            <button onClick={() => setSelectedId(null)}>&larr; {t("reviewer.backToList")}</button>
+            <button onClick={backToList}>&larr; {t("reviewer.backToList")}</button>
             <h2>{selected.employeeFullName}</h2>
             <ChecklistPanel
               department={myDept}

@@ -1,4 +1,11 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
+// The local network's DNS resolver was dropping the TXT/SRV lookups that
+// mongodb+srv:// needs (queryTxt ETIMEOUT), even though ordinary A record
+// lookups worked fine. Pointing Node's resolver at public DNS avoids that.
+require("dns").setServers(["8.8.8.8", "1.1.1.1"]);
+
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
