@@ -1,0 +1,39 @@
+{
+  "appTitle": "EGAS Employee Clearance",
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Sign in with your company Active Directory account",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "error": "Invalid username or password"
+  },
+  "nav": {
+    "logout": "Log out",
+    "language": "العربية"
+  },
+  "employee": {
+    "title": "My Clearance Request",
+    "noRequest": "You don't have a clearance request yet.",
+    "submitButton": "Submit clearance request",
+    "submitting": "Submitting...",
+    "statusLabel": "Overall status",
+    "statusInProgress": "In progress",
+    "statusCompleted": "Completed - you are cleared",
+    "departmentPending": "Pending",
+    "departmentCompleted": "Cleared"
+  },
+  "reviewer": {
+    "title": "Clearance requests waiting on my department",
+    "empty": "No pending requests for your department right now.",
+    "employee": "Employee",
+    "open": "Open",
+    "backToList": "Back to list",
+    "itemBlockedOrder": "Complete previous items first",
+    "itemBlockedFinal": "All other departments must finish before this can be checked",
+    "checklistFor": "Checklist for"
+  },
+  "common": {
+    "loading": "Loading..."
+  }
+}
