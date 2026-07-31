@@ -26,8 +26,36 @@ async function run() {
     await User.create({ ...u, passwordHash });
   }
 
+  console.log("[seed] creating demo clearance request (all departments cleared except IT)...");
+  const allDepartments = await Department.find().sort({ order: 1 });
+  const now = new Date();
+  await ClearanceRequest.create({
+    employeeUsername: "mohamed.retiring",
+    employeeFullName: "Mohamed Farouk",
+    departments: allDepartments.map((d) => ({
+      departmentKey: d.key,
+      name_ar: d.name_ar,
+      name_en: d.name_en,
+      isFinal: d.isFinal,
+      status: d.isFinal ? "pending" : "completed",
+      completedAt: d.isFinal ? null : now,
+      items: d.checklistItems
+        .sort((a, b) => a.order - b.order)
+        .map((i) => ({
+          key: i.key,
+          label_ar: i.label_ar,
+          label_en: i.label_en,
+          order: i.order,
+          checked: !d.isFinal,
+          checkedBy: d.isFinal ? null : "seed-script",
+          checkedAt: d.isFinal ? null : now,
+        })),
+    })),
+  });
+
   console.log("[seed] done. Sample logins (all passwords are Passw0rd!):");
-  console.log("  employee -> sara.employee");
+  console.log("  employee -> sara.employee (fresh, no request yet)");
+  console.log("  employee -> mohamed.retiring (all departments done except IT -- demo the final gate)");
   console.log("  admin    -> admin");
   console.log("  IT rev.  -> it.reviewer");
   console.log("  (every other department has a '<key>.reviewer' account too)");

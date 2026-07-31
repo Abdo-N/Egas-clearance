@@ -5,6 +5,10 @@
  */
 const users = [
   { username: "sara.employee", password: "Passw0rd!", fullName: "Sara Ahmed", role: "employee", employeeMeta: { jobTitle: "Senior Accountant", retirementDate: new Date("2026-08-01") } },
+  // Demo account: seed.js gives this employee a request with every
+  // department already cleared except IT, so the "IT signs last" gate can
+  // be demoed directly instead of clicking through 12 departments live.
+  { username: "mohamed.retiring", password: "Passw0rd!", fullName: "Mohamed Farouk", role: "employee", employeeMeta: { jobTitle: "Warehouse Supervisor", retirementDate: new Date("2026-08-15") } },
   { username: "admin", password: "Passw0rd!", fullName: "System Admin", role: "admin" },
 
   // One reviewer per seeded department, username = "<deptKey>.reviewer"
