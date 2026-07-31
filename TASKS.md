@@ -1,147 +1,193 @@
 # Task Split — Fri → Mon Demo Sprint
 
-Team: Nader (lead), Habiba, Ziad, Khaled, Jana.
-Split: Nader + Habiba + Ziad on backend. Khaled + Jana on frontend.
+**Updated: team is now 3 people — Nader (lead), Ziad, Jana.** Habiba and
+Khaled's former tasks have been folded into Ziad's and Jana's lists below.
+With fewer hands, every task is tagged **[Core]** (must be done for Monday) or
+**[Stretch]** (do it only after your Core tasks are finished and merged — cut
+it without guilt if you run out of time).
 
 The repo already has a working vertical slice: mock-AD login, employee submits
 a request, IT reviewer checks off the 9-step ordered checklist, other
-departments have a placeholder checklist, Arabic/English toggle. Your job for
-this sprint is to get it running on your own machine, understand it, and push
-it from "prototype" to "demo-ready." Read `CLAUDE.md` and `README.md` in the
-repo root before picking anything up here.
+departments have a placeholder checklist, Arabic/English toggle. All of that
+is confirmed working end to end against a shared MongoDB Atlas cluster. This
+sprint is about hardening it into something that survives a live demo and
+doesn't visibly break.
 
-**Everyone, install before Friday's sync (don't do this live, it wastes group
-time):**
-- **Node.js 18+** (installs `npm` automatically) &mdash; *search "install
-  Node.js LTS [your OS]"*.
-- **Git** &mdash; *search "install git [your OS]"*. If you've genuinely never
-  used git: *search "git clone commit push pull request beginner tutorial"*,
-  15 minutes, watch it before Friday not during.
-- **A GitHub account**, and accept Nader's collaborator invite (check email).
-- **VS Code** (or any code editor) &mdash; *search "install VS Code"*.
-- Optional but useful: **Postman** (for testing backend endpoints without a
-  frontend) and **MongoDB Compass** (a GUI to browse the database visually)
-  &mdash; *search "install Postman"* / *"install MongoDB Compass"*.
+Read `CLAUDE.md` and `README.md` in the repo root before picking anything up
+here if you haven't already.
 
-**Baseline things worth knowing before you open any code file** &mdash; you
-don't need to master these, just recognize them:
-- What a terminal/command line is, and how to `cd` into a folder and run a
-  command like `npm install`.
-- What "localhost" means &mdash; a server running on your own machine, not
-  the internet. `localhost:4000` is the backend, `localhost:5173` is the
-  frontend, and they only work while `npm run dev` is running in a terminal.
-- The basic git loop: pull the latest changes, make a branch, commit your
-  work, push the branch, open a pull request. You'll do this every day of
-  the sprint, so it's worth 15 minutes now over guessing later.
+**Nader only, before/while others work (do this first if not already done):**
+1. Confirm the GitHub repo is pushed and Ziad + Jana are added as
+   collaborators (GitHub Settings &rarr; Collaborators).
+2. Confirm both have the shared `MONGO_URI` and `JWT_SECRET` values (sent
+   privately, not in the group chat) for their own `backend/.env`.
+3. Confirm Atlas Network Access has `0.0.0.0/0` added so both their laptops
+   can connect regardless of network.
 
-**Everyone, once installed (Friday):**
-1. Clone the repo (`git clone <url>`), follow the Quick Start in `README.md`,
-   get both servers running and log in as `sara.employee` / `Passw0rd!`. If
-   this doesn't work, post in the group chat before doing anything else — a
-   broken local setup blocks everything downstream.
-2. Read, in this order: `CLAUDE.md` &rarr; `README.md` &rarr; your own section
-   below in this file.
-3. Skim `backend/src/models/*.js` and `frontend/src/pages/*.jsx` once, even if
-   they're not your area, so you know roughly what exists.
+**Everyone, baseline setup (skip anything already done):**
+- Node.js 18+, Git, a GitHub account, VS Code. *Search "install Node.js LTS
+  [your OS]"*, *"install git [your OS]"*.
+- Clone the repo, follow the Quick Start in `README.md`, confirm both servers
+  run and you can log in as `sara.employee` / `Passw0rd!`.
+- Read `CLAUDE.md` &rarr; `README.md` &rarr; your section below, in that order.
 
-If you get stuck at any point, ask Claude Code directly — paste the exact
-error message and say what you were trying to do. That's faster than
-guessing, and it's faster than waiting for someone else to be free. Don't sit
-stuck alone for more than ~20-30 minutes before posting in the group chat —
-getting stuck on setup is normal for a first fullstack project, budget real
-time for it Friday instead of assuming it'll be quick.
+If you get stuck, ask Claude Code directly with the exact error message
+rather than guessing. Don't sit stuck alone more than ~20-30 minutes before
+messaging the other two — with only 3 people, one person stuck silently for
+hours is a much bigger hit to the timeline than it was with 5.
 
 ---
 
-## Backend (Nader, Habiba, Ziad)
+## Nader (lead — spans both backend and frontend)
 
-### Nader (team lead)
-- Confirm the 3 missing department names (16 total, only 13 are in
-  `backend/src/seed/departments.data.js`) and add them.
-  *Tech to look up: none new — this is just editing a JS array, same shape as
-  the existing entries.*
-- Review Habiba's and Ziad's work before it's merged; keep `PROJECT_STATUS.md`
-  current as tasks move.
-- Get a shared MongoDB Atlas cluster set up so the whole team (and the Monday
-  demo) hits the same database instead of 5 separate local databases.
-  *Look up: "MongoDB Atlas free tier," "MongoDB Atlas network access / IP
-  allowlist" (needed so everyone's laptop can connect).*
-- Own the Monday demo script: which login, which clicks, in what order, to
-  show the IT-must-be-last rule actually blocking a too-early check.
+You're the floater: fix the one known bug, get the app somewhere that isn't
+just your laptop, then review and rehearse.
 
-### Habiba
-- Test every backend endpoint by hand with Postman (or `curl`) and write down
-  what you find in `PROJECT_STATUS.md` under "Known bugs." Specifically try:
-  submitting two requests in a row as the same employee (should be rejected),
-  checking an IT item out of order (should be rejected), a reviewer trying to
-  check off a department that isn't theirs (should be rejected).
-  *Tech to look up: "Postman basics," "HTTP status codes 400 401 403 409,"
-  reading `backend/src/routes/request.routes.js` alongside your tests so you
-  know what SHOULD happen.*
-- Add basic input validation to `auth.routes.js` and `request.routes.js` where
-  it's missing (e.g. reject empty/garbage input with a clear error message
-  instead of a 500).
-  *Tech to look up: "Express request validation," "Node.js try/catch with
-  async/await."*
+1. **[Core] Fix the admin department-picker bug.**
+   File: `frontend/src/pages/ReviewerDashboard.jsx`.
+   Bug: `const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey || user.role === "admin")`
+   always matches the *first* department in the array for an admin (since
+   `user.role === "admin"` is true on every element, `.find()` stops at index
+   0), so an admin account can currently only ever act on the Security
+   department no matter what they intend.
+   Fix shape: add a second piece of state (e.g. `selectedDeptKey`). For a
+   `reviewer`, the active department stays `user.departmentKey` as before
+   (unchanged, not broken). For an `admin`, add a screen between "request
+   list" and "checklist" that lists `selected.departments` (name + status
+   badge, reuse the `.badge` CSS classes already used in
+   `EmployeeDashboard.jsx`) with a button per department that sets
+   `selectedDeptKey`. Update `myDept`'s lookup and the `deptKey` used in
+   `handleCheck` (currently also broken on the same logic) to use this new
+   "active department" concept instead.
+   Test: log in as `admin`, open Sara's request, confirm you see a picker
+   listing all 13 departments instead of jumping straight into Security's
+   checklist.
+   *Tech: React `useState` for a second selection variable, conditional
+   rendering blocks (same pattern already used for `!selected` vs
+   `selected && myDept` in that file).*
 
-### Ziad
-- Build a small `GET /api/requests/:id/history` (or extend the existing
-  detail response) that surfaces who-checked-what-when in a clean shape for
-  the frontend — the data already exists on each item (`checkedBy`,
-  `checkedAt` in `ClearanceRequest.js`), you're exposing it, not storing new
-  data.
-  *Tech to look up: "Mongoose subdocuments," "Array.prototype.flatMap /
-  sort in JS," reading `backend/src/models/ClearanceRequest.js`.*
-- Add a `GET /api/departments/:key` (single department) and a rough
-  `PATCH /api/departments/:key` (admin-only, edits `checklistItems`) so that
-  once real per-department requirements arrive, someone can update them
-  without touching code or redeploying.
-  *Tech to look up: "Express route params," "Mongoose findOneAndUpdate,"
-  re-read the "role" middleware in `backend/src/middleware/auth.middleware.js`
-  to reuse `requireRole("admin")`.*
+2. **[Core] Deploy the app somewhere other than a laptop.** With only 3
+   people and one demo slot, you do not want Monday's demo to depend on
+   whoever's machine is plugged in having no wifi issues. Deploy the backend
+   to Render (free tier) and the frontend to Vercel or Netlify (free tier).
+   Both need the same environment variables you have locally (`MONGO_URI`,
+   `JWT_SECRET`, `JWT_EXPIRES_IN` for the backend) set in their dashboards,
+   not committed to git. The frontend's `vite.config.js` proxy only works in
+   local dev — once deployed, `frontend/src/api/client.js`'s `baseURL: "/api"`
+   needs to point at the deployed backend's real URL instead (an environment
+   variable is the clean way to do this — ask Claude Code to help wire up
+   `import.meta.env.VITE_API_URL` if you're not sure how).
+   *Tech to look up: "deploy Node Express app to Render," "deploy Vite React
+   app to Vercel," "Vite environment variables."*
+
+3. **[Core] Review Ziad's and Jana's pull requests** before merging, and keep
+   `PROJECT_STATUS.md` current as things move — with 3 people, an out-of-date
+   status file causes real confusion fast.
+
+4. **[Core] Own the Monday demo script** — exact logins, exact clicks, in an
+   order that shows the IT-must-be-last rule actually blocking a too-early
+   check. Rehearse it once end to end Monday morning on the deployed version,
+   not localhost.
 
 ---
 
-## Frontend (Khaled, Jana)
+## Ziad (backend)
 
-### Khaled
-- Turn the "submit request" button on `EmployeeDashboard.jsx` into a small
-  form (job title, retirement date) that POSTs those fields along with the
-  request — the backend model already has `employeeMeta` on `User`, but the
-  request-creation endpoint doesn't collect anything yet. Coordinate with
-  Ziad/Habiba on the exact request body shape before changing the backend.
-  *Tech to look up: "React controlled form inputs," "React useState," "HTML
-  date input."*
-- Add loading and error states everywhere a fetch happens (right now some
-  pages just don't render if a request fails). Look at how
-  `EmployeeDashboard.jsx` handles `request === undefined` and replicate that
-  pattern where it's missing.
-  *Tech to look up: "React conditional rendering," "try/catch around async
-  calls in React," "axios error handling."*
+Habiba's old tasks are folded in as Core since a live demo crashing on bad
+input looks bad; her old testing task is trimmed to be fast.
 
-### Jana
-- Polish `ReviewerDashboard.jsx` and `ChecklistPanel.jsx`: add a confirmation
-  dialog before checking the final IT item ("Delete from Active Directory") —
-  it should feel deliberately irreversible in the UI even though the backend
-  is the real guard.
-  *Tech to look up: "React component props," "window.confirm vs a custom
-  modal," reading `frontend/src/components/ChecklistPanel.jsx`.*
-- Go through both languages end to end (toggle EN/AR on every page) and fix
-  any layout that breaks in RTL. Add any missing strings to BOTH
-  `frontend/src/locales/en.json` and `ar.json` — never add one without the
-  other.
-  *Tech to look up: "CSS RTL / dir attribute," "react-i18next useTranslation
-  hook," skim `frontend/src/i18n.js`.*
+1. **[Core] Add input validation** to `backend/src/routes/auth.routes.js` and
+   `backend/src/routes/request.routes.js` — reject empty/garbage input (empty
+   username, missing `checked` boolean, etc.) with a clear 400 error instead
+   of letting it fall through to a 500 crash. Look at how
+   `request.routes.js` already does this for the `checked` field
+   (`if (typeof checked !== "boolean")`) and apply the same pattern anywhere
+   it's missing.
+   *Tech: "Express request validation," "Node.js try/catch with
+   async/await."*
+
+2. **[Core] Smoke-test the deployed backend once Nader has it live.** Run
+   through: submitting two requests as the same employee (second should be
+   rejected, 409), checking an IT item out of order (400), a reviewer
+   checking a department that isn't theirs (403). Use `backend/scripts/smoke-test.js`
+   as a starting point (`BASE_URL=<deployed-url>/api node scripts/smoke-test.js`)
+   or Postman if you want to click through it manually. Log anything broken
+   in `PROJECT_STATUS.md` under a "Known bugs" heading.
+   *Tech: "Postman basics" or just reuse the existing smoke-test script,
+   "HTTP status codes 400 401 403 409."*
+
+3. **[Stretch] Build `GET /api/requests/:id/history`** — surface who-checked-
+   what-when in a clean shape for the frontend. The data already exists on
+   every checklist item (`checkedBy`, `checkedAt` in
+   `backend/src/models/ClearanceRequest.js`); you're exposing it, not storing
+   anything new. This is a nice demo flourish (shows real audit trail) but
+   not required for the core flow to work — do it only after items 1 and 2
+   are done and merged.
+   *Tech: "Mongoose subdocuments," reading `ClearanceRequest.js`.*
+
+4. **[Stretch, cut first if short on time] Admin department-edit endpoints**
+   — `GET /api/departments/:key` and `PATCH /api/departments/:key`
+   (admin-only, edits `checklistItems`) so real per-department requirements
+   can be added later without touching code. Lowest priority of your four
+   tasks — if Monday's close and this isn't started, skip it; Nader can edit
+   seed data directly in the meantime.
+
+---
+
+## Jana (frontend)
+
+Khaled's old tasks are folded in — trimmed to what actually matters for a
+live demo looking solid.
+
+1. **[Core] Confirmation dialog on IT's final checklist item.** In
+   `frontend/src/components/ChecklistPanel.jsx`, before checking "Delete from
+   Active Directory" (the last IT item), show a confirmation
+   (`window.confirm(...)` is fine, doesn't need to be fancy) so it feels
+   deliberately irreversible — this is the dramatic moment of the demo, it
+   should not feel like an accidental checkbox click.
+   *Tech: "window.confirm in React," reading `ChecklistPanel.jsx`'s existing
+   `onCheck` prop.*
+
+2. **[Core] Add loading and error states everywhere a fetch happens.** Right
+   now some pages just render blank if a request fails or is slow — bad look
+   mid-demo if Atlas has a hiccup. Look at how `EmployeeDashboard.jsx`
+   already handles `request === undefined` (shows a loading message) and
+   replicate that pattern in `ReviewerDashboard.jsx` and anywhere else a
+   `client.get`/`client.post`/`client.patch` call happens without one.
+   *Tech: "React conditional rendering," "try/catch around async calls in
+   React," "axios error handling."*
+
+3. **[Core] Full Arabic/English + RTL pass.** Toggle between languages on
+   every screen (login, employee dashboard, reviewer dashboard, and Nader's
+   new admin department-picker once he's done with it) and fix any layout
+   that visually breaks in RTL. Add any missing strings to BOTH
+   `frontend/src/locales/en.json` and `ar.json` together — never add one
+   without the other, or the missing language will just show the raw
+   translation key on screen.
+   *Tech: "CSS RTL / dir attribute," "react-i18next useTranslation hook,"
+   skim `frontend/src/i18n.js`.*
+
+4. **[Stretch] Request submission form.** Turn the plain "submit request"
+   button on `EmployeeDashboard.jsx` into a short form (job title, retirement
+   date) that sends those fields along with the request. The `User` model
+   already has an `employeeMeta` field for this, but the request-creation
+   endpoint doesn't collect anything yet — coordinate with Ziad on the exact
+   request body shape before touching the backend. Lowest priority — nice
+   polish, not required to prove the workflow works.
+   *Tech: "React controlled form inputs," "HTML date input."*
 
 ---
 
 ## Sprint shape (adjust as needed, but don't skip step 1)
 
-- **Fri (today):** everyone gets the app running locally. Nobody starts their
-  individual task until `npm run dev` works for both frontend and backend.
-- **Sat:** everyone works their task above in a branch, commits often, opens a
-  PR even if small.
-- **Sun:** merge everything into one branch, fix integration issues together
-  (this always takes longer than expected — start Sunday morning, not night).
-- **Mon (early):** Nader runs through the demo script once, end to end, on the
-  shared Atlas database, before presenting.
+- **Today:** if you haven't already, get the app running locally — nobody
+  starts their individual tasks until `npm run dev` works for both frontend
+  and backend, and Nader confirms repo access + secrets are sent.
+- **Next day:** work your Core tasks first, in a branch, committing often,
+  opening a PR even if small. Only move to Stretch tasks once your Core
+  tasks are done and merged.
+- **Day after:** merge everything into one branch together, fix integration
+  issues as a group (budget real time for this — it always takes longer than
+  expected with 3 people juggling both layers).
+- **Demo day (Mon), early:** Nader runs the demo script once, end to end, on
+  the deployed version, before presenting.

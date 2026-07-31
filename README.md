@@ -1,7 +1,7 @@
 # EGAS Employee Clearance System
 
 Digital replacement for EGAS's paper "إخلاء طرف" (clearance) process. An employee
-retiring or resigning submits one request online; each of the 16 departments
+retiring or resigning submits one request online; each of the 13 departments
 checks off their own requirements for that employee instead of signing a paper
 form. The IT department's checklist always finishes last, since its last step
 deletes the employee from Active Directory.
@@ -65,8 +65,6 @@ node scripts/smoke-test.js
 These are intentional placeholders, not bugs — see `PROJECT_STATUS.md` for the
 live tracker.
 
-- **Only 13 of 16 department names are confirmed.** Nader has the paper list;
-  3 more names need to be added to `backend/src/seed/departments.data.js`.
 - **Only IT's checklist is real.** Every other department currently has one
   generic placeholder checklist item ("No outstanding items"). Someone needs to
   sit with each department and write down their actual requirements, then update

@@ -13,44 +13,44 @@ Update this file whenever a task moves — don't let it go stale.
       enforcing: (1) items checked in order within a department, (2) a
       `isFinal` department's last item blocked until every other department
       is completed.
-- [x] Seed data: 13 of 16 departments (real names), IT's exact 9-step ordered
-      checklist, generic single-item placeholder for the other 12, 15 mock AD
-      users (1 employee, 1 admin, 1 reviewer per department).
+- [x] Seed data: all 13 departments (real names, confirmed complete), IT's
+      exact 9-step ordered checklist, generic single-item placeholder for the
+      other 12, 15 mock AD users (1 employee, 1 admin, 1 reviewer per
+      department).
 - [x] Frontend: login, employee dashboard (submit + status grid), reviewer
       dashboard (pending list + checklist check-off), Arabic/English toggle
       with RTL, defaults to Arabic.
 - [x] Verified: backend syntax/module loading, seed-data structural integrity
       (unique keys, clean ordering, exactly one `isFinal` department, full
       reviewer coverage), and frontend production build — all pass.
-- [x] `scripts/smoke-test.js` written to exercise the full flow (order
-      enforcement + final gate) against a real running server + MongoDB.
-      **Not yet run against a real MongoDB** — the sandbox this was built in
-      had no network access to download a MongoDB binary. Someone with
-      MongoDB running locally should run this before Monday and confirm it
-      passes; see "Needs verification" below.
+- [x] Shared MongoDB Atlas cluster set up and confirmed working — login,
+      request submission, department check-off, and the IT order/final-gate
+      rule all verified live end to end (both backend and frontend running
+      against it).
 
-## In progress / assigned
+## Team update
 
-See `TASKS.md` for the full breakdown. Short version:
-- Nader: missing 3 department names, shared MongoDB Atlas cluster, demo script.
-- Habiba: manual endpoint testing + input validation.
-- Ziad: history/audit endpoint, admin department-edit endpoint.
-- Khaled: request-submission form (job title/retirement date), loading/error states.
-- Jana: confirmation dialog on the final IT step, full EN/AR + RTL pass.
+**Team is now 3 people: Nader (lead), Ziad, Jana.** Habiba and Khaled's
+former tasks were redistributed, not dropped — see `TASKS.md` for the full,
+detailed breakdown with Core vs. Stretch priority tags. Short version:
+- Nader: fix the admin department-picker bug (`ReviewerDashboard.jsx`),
+  deploy backend + frontend, review PRs, own the demo script.
+- Ziad: backend input validation, smoke-testing the deployed backend, and
+  (stretch) the history endpoint + admin department-edit endpoints.
+- Jana: confirmation dialog on IT's final step, loading/error states, full
+  EN/AR + RTL pass, and (stretch) the request-submission form fields.
 
-## Needs verification (do this first, Friday)
+## Known bugs
 
-- [ ] Run `node backend/scripts/smoke-test.js` against a real local MongoDB +
-      running server. It should print "ALL CHECKS PASSED." If it doesn't,
-      that's the top priority to fix — everything else depends on this flow
-      actually working.
+- [ ] **Admin can only act on the first department (Security) of a request,
+      regardless of intent.** `ReviewerDashboard.jsx`'s department lookup has
+      `|| user.role === "admin"` in a `.find()`, which matches the first
+      array element for every admin. Assigned to Nader, in progress — see
+      `TASKS.md`.
 
 ## Blocked / needs real-world input (not solvable by writing more code)
 
-- [ ] **3 missing department names.** EGAS has 16 departments; the brief only
-      listed 13 clearly. Nader has the paper form — needs to add the other 3
-      to `backend/src/seed/departments.data.js`.
-- [ ] **Real checklist requirements for 15 of 16 departments.** Only IT's
+- [ ] **Real checklist requirements for 12 of 13 departments.** Only IT's
       checklist is real. Someone needs to talk to each department (or find
       existing documentation) and get their actual requirements. Until then,
       every non-IT department uses a single generic placeholder item so the

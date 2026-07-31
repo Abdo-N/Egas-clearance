@@ -7,9 +7,9 @@ what to build and what to look up.
 ## What this project is
 
 Digitizing EGAS's paper-based employee clearance ("إخلاء طرف") process. When an
-employee retires or resigns, they used to walk a paper form to 16 departments and
+employee retires or resigns, they used to walk a paper form to 13 departments and
 collect signatures. This app replaces that with a website: the employee logs in,
-submits a clearance request, and each of the 16 departments checks off their own
+submits a clearance request, and each of the 13 departments checks off their own
 checklist for that employee online. The IT department's checklist always finishes
 last, because its final step deletes the employee from Active Directory.
 

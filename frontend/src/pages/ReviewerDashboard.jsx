@@ -23,7 +23,7 @@ export default function ReviewerDashboard() {
   }, []);
 
   const selected = requests.find((r) => r._id === selectedId);
-  const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey || user.role === "admin");
+  const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey || user.role === "admin"); //bug
 
   async function handleCheck(itemKey, checked) {
     if (!selected) return;
