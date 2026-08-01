@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import DepartmentIcon from "./DepartmentIcon";
+import { formatDate } from "../utils/formatDate";
 
 /**
  * Renders one department's checklist for a reviewer, and enforces the
@@ -6,20 +9,43 @@ import { useTranslation } from "react-i18next";
  * enforces server-side (this is just for a good UX -- the backend PATCH
  * will reject an out-of-order or too-early-final check regardless).
  */
-export default function ChecklistPanel({ department, allDepartments, onCheck, busyKey }) {
+export default function ChecklistPanel({ department, allDepartments, onCheck, onReject, busyKey, rejecting }) {
   const { i18n, t } = useTranslation();
   const isAr = i18n.language === "ar";
+  const isRejected = department.status === "rejected";
+  const [reason, setReason] = useState("");
   const sorted = [...department.items].sort((a, b) => a.order - b.order);
 
   const othersDone = allDepartments
     .filter((d) => d.departmentKey !== department.departmentKey)
     .every((d) => d.status === "completed");
 
+  function submitReject() {
+    if (!reason.trim()) return;
+    onReject(true, reason.trim());
+    setReason("");
+  }
+
   return (
-    <div className="checklist-panel">
-      <h3>
+    <div className="checklist-panel panel-card">
+      <h3 className="checklist-panel-title">
+        <DepartmentIcon departmentKey={department.departmentKey} className="checklist-panel-icon" />
         {t("reviewer.checklistFor")} {isAr ? department.name_ar : department.name_en}
       </h3>
+
+      {isRejected && (
+        <div className="rejection-banner">
+          <strong>{t("reviewer.rejectedBannerTitle")}</strong>
+          <p>{department.rejectedReason}</p>
+          <small>
+            {t("reviewer.rejectedBy")}: {department.rejectedBy} · {formatDate(department.rejectedAt, i18n.language)}
+          </small>
+          <button type="button" className="secondary-button" disabled={rejecting} onClick={() => onReject(false)}>
+            {t("reviewer.clearRejection")}
+          </button>
+        </div>
+      )}
+
       <ul>
         {sorted.map((item, idx) => {
           const priorUnchecked = sorted.slice(0, idx).some((i) => !i.checked);
@@ -33,21 +59,36 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, bu
                 <input
                   type="checkbox"
                   checked={item.checked}
-                  disabled={disabled || busyKey === item.key}
+                  disabled={isRejected || disabled || busyKey === item.key}
                   onChange={(e) => onCheck(item.key, e.target.checked)}
                 />
                 {isAr ? item.label_ar : item.label_en}
               </label>
-              {disabled && !item.checked && priorUnchecked && (
+              {!isRejected && disabled && !item.checked && priorUnchecked && (
                 <span className="hint">{t("reviewer.itemBlockedOrder")}</span>
               )}
-              {disabled && !item.checked && !priorUnchecked && finalBlocked && (
+              {!isRejected && disabled && !item.checked && !priorUnchecked && finalBlocked && (
                 <span className="hint">{t("reviewer.itemBlockedFinal")}</span>
               )}
             </li>
           );
         })}
       </ul>
+
+      {!isRejected && (
+        <div className="reject-action">
+          <textarea
+            className="reject-reason-input"
+            placeholder={t("reviewer.rejectReasonPlaceholder")}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+          />
+          <button type="button" className="reject-button" disabled={!reason.trim() || rejecting} onClick={submitReject}>
+            {t("reviewer.rejectButton")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

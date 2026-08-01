@@ -6,22 +6,40 @@
     "username": "Username",
     "password": "Password",
     "submit": "Sign in",
-    "error": "Invalid username or password"
+    "error": "Invalid username or password",
+    "demoAccounts": {
+      "summary": "Demo accounts (temporary, for testing)",
+      "employees": "Employees",
+      "admin": "Admin",
+      "departments": "Department reviewers",
+      "passwordNote": "Password for every account above:",
+      "fillHint": "Click any account to fill in the form"
+    }
   },
   "nav": {
-    "logout": "Log out",
-    "language": "العربية"
+    "logout": "Log out"
   },
   "employee": {
     "title": "My Clearance Request",
     "noRequest": "You don't have a clearance request yet.",
+    "reasonLabel": "Reason for leaving",
+    "reasonResignation": "Resignation",
+    "reasonNewJob": "Moving to a new company",
+    "reasonRetirement": "Retirement (age 60)",
+    "lastWorkingDayLabel": "Suggested last working day",
     "submitButton": "Submit clearance request",
     "submitting": "Submitting...",
     "statusLabel": "Overall status",
     "statusInProgress": "In progress",
     "statusCompleted": "Completed - you are cleared",
+    "requestedOn": "Request submitted on",
     "departmentPending": "Pending",
-    "departmentCompleted": "Cleared"
+    "departmentCompleted": "Cleared",
+    "departmentCurrent": "In progress",
+    "departmentUpcoming": "Not started yet",
+    "departmentRejected": "Rejected",
+    "statusRejected": "Rejected - action required",
+    "rejectedTitle": "Your clearance request was rejected"
   },
   "reviewer": {
     "title": "Clearance requests waiting on my department",
@@ -32,7 +50,16 @@
     "selectDepartment": "Select a department to review",
     "itemBlockedOrder": "Complete previous items first",
     "itemBlockedFinal": "All other departments must finish before this can be checked",
-    "checklistFor": "Checklist for"
+    "checklistFor": "Checklist for",
+    "requestInfoDepartment": "Department",
+    "requestInfoReason": "Reason for leaving",
+    "requestInfoLastDay": "Suggested last working day",
+    "requestInfoSubmitted": "Submitted on",
+    "rejectReasonPlaceholder": "Explain what's missing or unresolved...",
+    "rejectButton": "Reject this department's clearance",
+    "rejectedBannerTitle": "This department's clearance was rejected",
+    "rejectedBy": "Rejected by",
+    "clearRejection": "Clear rejection and resume review"
   },
   "common": {
     "loading": "Loading..."

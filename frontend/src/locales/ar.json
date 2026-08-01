@@ -1,27 +1,45 @@
 {
-  "appTitle": "منظومة إخلاء طرف الموظفين - الهيئة العامة للتأمين الصحي",
+  "appTitle": "منظومة إخلاء طرف الموظفين - إيغاس",
   "login": {
     "title": "تسجيل الدخول",
     "subtitle": "سجل الدخول باستخدام حساب الأكتيف دايركتوري الخاص بالشركة",
     "username": "اسم المستخدم",
     "password": "كلمة المرور",
     "submit": "دخول",
-    "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
+    "error": "اسم المستخدم أو كلمة المرور غير صحيحة",
+    "demoAccounts": {
+      "summary": "حسابات تجريبية (مؤقتة، للاختبار)",
+      "employees": "الموظفون",
+      "admin": "المسؤول",
+      "departments": "مراجعو الأقسام",
+      "passwordNote": "كلمة المرور لجميع الحسابات أعلاه:",
+      "fillHint": "اضغط على أي حساب لملء النموذج"
+    }
   },
   "nav": {
-    "logout": "تسجيل خروج",
-    "language": "English"
+    "logout": "تسجيل خروج"
   },
   "employee": {
     "title": "طلب إخلاء الطرف الخاص بي",
     "noRequest": "لا يوجد لديك طلب إخلاء طرف حتى الآن.",
+    "reasonLabel": "سبب المغادرة",
+    "reasonResignation": "استقالة",
+    "reasonNewJob": "الانتقال إلى شركة أخرى",
+    "reasonRetirement": "المعاش",
+    "lastWorkingDayLabel": "تاريخ آخر يوم عمل المقترح",
     "submitButton": "تقديم طلب إخلاء طرف",
     "submitting": "جاري التقديم...",
     "statusLabel": "الحالة العامة",
     "statusInProgress": "قيد الإجراء",
     "statusCompleted": "تم إخلاء الطرف بالكامل",
+    "requestedOn": "تاريخ تقديم الطلب",
     "departmentPending": "قيد الانتظار",
-    "departmentCompleted": "تم إخلاء الطرف"
+    "departmentCompleted": "تم إخلاء الطرف",
+    "departmentCurrent": "قيد المراجعة الآن",
+    "departmentUpcoming": "لم يبدأ بعد",
+    "departmentRejected": "مرفوض",
+    "statusRejected": "مرفوض - يتطلب اتخاذ إجراء",
+    "rejectedTitle": "تم رفض طلب إخلاء الطرف الخاص بك"
   },
   "reviewer": {
     "title": "طلبات إخلاء الطرف المعلقة على قسمي",
@@ -32,7 +50,16 @@
     "selectDepartment": "اختر القسم المطلوب مراجعته",
     "itemBlockedOrder": "يجب إتمام العناصر السابقة أولاً",
     "itemBlockedFinal": "يجب أن تنتهي جميع الأقسام الأخرى قبل تحديد هذا العنصر",
-    "checklistFor": "قائمة الفحص لـ"
+    "checklistFor": "قائمة الفحص لـ",
+    "requestInfoDepartment": "القسم",
+    "requestInfoReason": "سبب المغادرة",
+    "requestInfoLastDay": "تاريخ آخر يوم عمل المقترح",
+    "requestInfoSubmitted": "تاريخ التقديم",
+    "rejectReasonPlaceholder": "اشرح ما هو غير مكتمل أو غير محلول...",
+    "rejectButton": "رفض إخلاء الطرف الخاص بهذا القسم",
+    "rejectedBannerTitle": "تم رفض إخلاء الطرف الخاص بهذا القسم",
+    "rejectedBy": "تم الرفض بواسطة",
+    "clearRejection": "إلغاء الرفض واستئناف المراجعة"
   },
   "common": {
     "loading": "جاري التحميل..."
