@@ -171,13 +171,13 @@ live demo looking solid.
    *Tech: "CSS RTL / dir attribute," "react-i18next useTranslation hook,"
    skim `frontend/src/i18n.js`.*
 
-4. **[Stretch] Request submission form.** Turn the plain "submit request"
-   button on `EmployeeDashboard.jsx` into a short form (job title, retirement
-   date) that sends those fields along with the request. The `User` model
-   already has an `employeeMeta` field for this, but the request-creation
-   endpoint doesn't collect anything yet — coordinate with Ziad on the exact
-   request body shape before touching the backend. Lowest priority — nice
-   polish, not required to prove the workflow works.
+4. **[Stretch] Request submission form. — DONE, see `PROJECT_STATUS.md`.**
+   `EmployeeDashboard.jsx`'s submit button is now a real form: reason for
+   leaving (resignation / new job / retirement) and a suggested last working
+   day, both required and validated server-side in
+   `backend/src/routes/request.routes.js`. (Shipped as `reason` +
+   `lastWorkingDay` on `ClearanceRequest` rather than reusing `User.employeeMeta`,
+   since those fields describe the request, not the employee record.)
    *Tech: "React controlled form inputs," "HTML date input."*
 
 ---
