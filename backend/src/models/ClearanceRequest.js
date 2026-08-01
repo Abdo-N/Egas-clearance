@@ -25,22 +25,40 @@ const requestDepartmentSchema = new mongoose.Schema(
     name_ar: { type: String, required: true },
     name_en: { type: String, required: true },
     isFinal: { type: Boolean, default: false },
-    status: { type: String, enum: ["pending", "completed"], default: "pending" },
+    // "rejected" means the department found something unresolved (e.g. an
+    // outstanding item) and blocked clearance -- see request.routes.js's
+    // PATCH .../reject. It overrides pending/completed until a reviewer or
+    // admin clears it.
+    status: { type: String, enum: ["pending", "completed", "rejected"], default: "pending" },
     items: { type: [requestItemSchema], default: [] },
     completedAt: { type: Date, default: null },
+    rejectedReason: { type: String, default: null },
+    rejectedBy: { type: String, default: null }, // username of reviewer/admin
+    rejectedAt: { type: Date, default: null },
   },
   { _id: false }
 );
+
+// Why the employee is leaving. "retirement" covers Egypt's mandatory
+// retirement-at-60 policy, referred to as "المعاش" -- see request.routes.js
+// for the values accepted from the submission form.
+const LEAVING_REASONS = ["resignation", "new_job", "retirement"];
 
 const clearanceRequestSchema = new mongoose.Schema(
   {
     employeeUsername: { type: String, required: true },
     employeeFullName: { type: String, required: true },
-    status: { type: String, enum: ["in_progress", "completed"], default: "in_progress" },
+    reason: { type: String, enum: LEAVING_REASONS, required: true },
+    lastWorkingDay: { type: Date, required: true },
+    // Mirrors the "any department rejected?" state across all departments --
+    // see computeOverallStatus() in request.routes.js.
+    status: { type: String, enum: ["in_progress", "completed", "rejected"], default: "in_progress" },
     departments: { type: [requestDepartmentSchema], default: [] },
     completedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("ClearanceRequest", clearanceRequestSchema);
+const ClearanceRequest = mongoose.model("ClearanceRequest", clearanceRequestSchema);
+ClearanceRequest.LEAVING_REASONS = LEAVING_REASONS;
+module.exports = ClearanceRequest;

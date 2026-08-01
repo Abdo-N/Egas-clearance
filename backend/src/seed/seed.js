@@ -32,6 +32,8 @@ async function run() {
   await ClearanceRequest.create({
     employeeUsername: "mohamed.retiring",
     employeeFullName: "Mohamed Farouk",
+    reason: "retirement",
+    lastWorkingDay: new Date("2026-08-15"), // matches employeeMeta.retirementDate in users.data.js
     departments: allDepartments.map((d) => ({
       departmentKey: d.key,
       name_ar: d.name_ar,

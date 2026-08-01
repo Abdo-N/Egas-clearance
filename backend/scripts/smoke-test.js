@@ -43,6 +43,7 @@ async function main() {
   const reqRes = await fetch(`${BASE}/requests`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${empToken}` },
+    body: JSON.stringify({ reason: "resignation", lastWorkingDay: "2026-12-31" }),
   });
   const request = await reqRes.json();
   if (reqRes.status !== 201) throw new Error(JSON.stringify(request));
