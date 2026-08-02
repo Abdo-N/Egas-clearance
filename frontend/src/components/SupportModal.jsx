@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const SupportModal = () => {
+  const { t, i18n } = useTranslation();
+  const isAr = i18n.language === "ar";
   const [isOpen, setIsOpen] = useState(false);
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = (e) => {
@@ -12,114 +15,108 @@ const SupportModal = () => {
       setTimeout(() => {
         setSubmitted(false);
         setIsOpen(false);
-        setPhone('');
+        setPhone("");
       }, 3000);
     }
   };
 
   return (
-    <div style={{ position: 'fixed', bottom: '20px', left: '20px', zIndex: 1000, fontFamily: 'sans-serif' }}>
-      {/* زر المساعدة العائم */}
+    <div style={{ position: "fixed", bottom: "20px", left: "20px", zIndex: 1000 }}>
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           style={{
-            backgroundColor: '#0056b3',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '50px',
-            padding: '12px 20px',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.2)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            backgroundColor: "#0056b3",
+            color: "#fff",
+            border: "none",
+            borderRadius: "50px",
+            padding: "12px 20px",
+            fontSize: "16px",
+            fontWeight: "bold",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
           }}
         >
-          <span>💬 هل تحتاج مساعدة؟</span>
+          <span>💬 {t("support.toggleButton")}</span>
         </button>
       )}
 
-      {/* نافذة الدعم الفني */}
       {isOpen && (
         <div
           style={{
-            backgroundColor: '#fff',
-            border: '2px solid #0056b3',
-            borderRadius: '12px',
-            padding: '20px',
-            width: '320px',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-            direction: 'rtl',
-            textAlign: 'right'
+            backgroundColor: "#fff",
+            border: "2px solid #0056b3",
+            borderRadius: "12px",
+            padding: "20px",
+            width: "320px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            direction: isAr ? "rtl" : "ltr",
+            textAlign: isAr ? "right" : "left",
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <h3 style={{ margin: 0, fontSize: '18px', color: '#0056b3' }}>خدمة المساعدة والدعم</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+            <h3 style={{ margin: 0, fontSize: "18px", color: "#0056b3" }}>{t("support.title")}</h3>
             <button
               onClick={() => setIsOpen(false)}
-              style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}
+              style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer" }}
             >
               ✖
             </button>
           </div>
 
-          <p style={{ fontSize: '14px', color: '#555', marginBottom: '15px' }}>
-            إذا كنت تواجه صعوبة في تسجيل الدخول أو استكمال إخلاء الطرف، يمكنك التواصل معنا مباشرة:
-          </p>
+          <p style={{ fontSize: "14px", color: "#555", marginBottom: "15px" }}>{t("support.intro")}</p>
 
-          {/* الاتصال المباشر */}
-          <div style={{ backgroundColor: '#f0f4f8', padding: '10px', borderRadius: '8px', marginBottom: '15px' }}>
-            <span style={{ fontSize: '13px', color: '#666' }}>الخط الساخن للدعم الفني:</span>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0056b3', direction: 'ltr', textAlign: 'center', marginTop: '5px' }}>
-              <a href="tel:16xxx" style={{ textDecoration: 'none', color: 'inherit' }}>16XXX / 02-XXXXXXX</a>
+          <div style={{ backgroundColor: "#f0f4f8", padding: "10px", borderRadius: "8px", marginBottom: "15px" }}>
+            <span style={{ fontSize: "13px", color: "#666" }}>{t("support.hotlineLabel")}</span>
+            <div style={{ fontSize: "20px", fontWeight: "bold", color: "#0056b3", direction: "ltr", textAlign: "center", marginTop: "5px" }}>
+              <a href="tel:16xxx" style={{ textDecoration: "none", color: "inherit" }}>16XXX / 02-XXXXXXX</a>
             </div>
           </div>
 
-          {/* طلب إعادة الاتصال */}
           {!submitted ? (
             <form onSubmit={handleSubmit}>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '5px' }}>
-                أدخل رقم هاتفك وسيقوم مسؤول الدعم بالاتصال بك:
+              <label style={{ display: "block", fontSize: "13px", marginBottom: "5px" }}>
+                {t("support.callbackLabel")}
               </label>
               <input
                 type="tel"
-                placeholder="01xxxxxxxxx"
+                placeholder={t("support.callbackPlaceholder")}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
                 style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '6px',
-                  border: '1px solid #ccc',
-                  marginBottom: '10px',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "6px",
+                  border: "1px solid #ccc",
+                  marginBottom: "10px",
+                  fontSize: "14px",
+                  boxSizing: "border-box",
                 }}
               />
               <button
                 type="submit"
                 style={{
-                  width: '100%',
-                  backgroundColor: '#28a745',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px',
-                  borderRadius: '6px',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  cursor: 'pointer'
+                  width: "100%",
+                  backgroundColor: "#28a745",
+                  color: "#fff",
+                  border: "none",
+                  padding: "10px",
+                  borderRadius: "6px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                  cursor: "pointer",
                 }}
               >
-                طلب اتصال من الدعم
+                {t("support.callbackButton")}
               </button>
             </form>
           ) : (
-            <div style={{ backgroundColor: '#d4edda', color: '#155724', padding: '10px', borderRadius: '6px', textAlign: 'center', fontSize: '14px' }}>
-              تم استلام طلبك بنجاح! سيتم التواصل معك في أقرب وقت.
+            <div style={{ backgroundColor: "#d4edda", color: "#155724", padding: "10px", borderRadius: "6px", textAlign: "center", fontSize: "14px" }}>
+              {t("support.callbackSuccess")}
             </div>
           )}
         </div>

@@ -19,6 +19,16 @@
   "nav": {
     "logout": "Log out"
   },
+  "support": {
+    "toggleButton": "Need help?",
+    "title": "Support & Help",
+    "intro": "If you're having trouble signing in or completing your clearance, you can contact us directly:",
+    "hotlineLabel": "Support hotline:",
+    "callbackLabel": "Enter your phone number and a support agent will call you:",
+    "callbackPlaceholder": "01xxxxxxxxx",
+    "callbackButton": "Request a callback",
+    "callbackSuccess": "Your request has been received! We'll be in touch shortly."
+  },
   "employee": {
     "title": "My Clearance Request",
     "noRequest": "You don't have a clearance request yet.",
