@@ -174,6 +174,7 @@ export default function EmployeeDashboard() {
 
                   return (
                     <div className="dept-progress-step" data-state={state} key={d.departmentKey}>
+                      <span className="dept-progress-order">{idx + 1}</span>
                       <div className="dept-progress-icon">
                         <DepartmentIcon departmentKey={d.departmentKey} />
                       </div>

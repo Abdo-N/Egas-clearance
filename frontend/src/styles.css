@@ -682,11 +682,12 @@ p {
 
 .dept-progress-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
 
 .dept-progress-step {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 8px;
@@ -695,6 +696,23 @@ p {
   border-radius: var(--radius-md);
   background: #fff;
   text-align: center;
+}
+
+.dept-progress-order {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--ink-900);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dept-progress-step[data-state="done"] {
