@@ -354,7 +354,7 @@ p {
 
 .app-shell {
   min-height: 100vh;
-  background: #f3f7f6;
+  background: #f3f7f6 url("./assets/Main bg 1.png") center / cover no-repeat fixed;
   color: var(--ink-900);
 }
 
