@@ -66,7 +66,6 @@ export default function Login() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         position: "relative"
       }}
     >
