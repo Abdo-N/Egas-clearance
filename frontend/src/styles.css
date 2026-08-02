@@ -888,20 +888,45 @@ p {
 /* ---------- Request list (reviewer) ---------- */
 
 .sort-control {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-card);
 }
 
 .sort-control label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink-500);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-700);
+  white-space: nowrap;
 }
 
 .sort-control select {
   width: auto;
+  border: 1px solid var(--green-700);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: var(--green-100);
+  color: var(--green-800);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.sort-control select:hover {
+  background: #d9ece7;
+}
+
+.sort-control select:focus-visible {
+  border-color: var(--green-800);
+  box-shadow: 0 0 0 3px rgba(11, 107, 96, 0.18);
 }
 
 .request-list {
