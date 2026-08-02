@@ -538,6 +538,9 @@ p {
 
 .badge {
   display: inline-flex;
+  justify-content: center;
+  min-width: 96px;
+  flex-shrink: 0;
   padding: 5px 12px;
   border-radius: 999px;
   background: #eef4f3;
@@ -911,7 +914,6 @@ p {
 
 .request-list li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 14px;
   background: #fff;
@@ -920,10 +922,17 @@ p {
   border: 1px solid var(--line);
 }
 
+.request-list li > .secondary-button {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
 .request-list-dept {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .request-list-icon {
