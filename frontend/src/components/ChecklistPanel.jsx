@@ -14,6 +14,7 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
   const isAr = i18n.language === "ar";
   const isRejected = department.status === "rejected";
   const [reason, setReason] = useState("");
+  const [pendingItem, setPendingItem] = useState(null);
   const sorted = [...department.items].sort((a, b) => a.order - b.order);
 
   const othersDone = allDepartments
@@ -51,6 +52,7 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
           const priorUnchecked = sorted.slice(0, idx).some((i) => !i.checked);
           const isLast = idx === sorted.length - 1;
           const finalBlocked = department.isFinal && isLast && !othersDone;
+          const isDangerousFinalCheck = department.isFinal && isLast;
           const disabled = item.checked ? false : priorUnchecked || finalBlocked;
 
           return (
@@ -60,7 +62,13 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
                   type="checkbox"
                   checked={item.checked}
                   disabled={isRejected || disabled || busyKey === item.key}
-                  onChange={(e) => onCheck(item.key, e.target.checked)}
+                  onChange={(e) => {
+  if (isDangerousFinalCheck && e.target.checked) {
+    setPendingItem(item);
+  } else {
+    onCheck(item.key, e.target.checked);
+  }
+}}
                 />
                 {isAr ? item.label_ar : item.label_en}
               </label>
@@ -74,6 +82,32 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
           );
         })}
       </ul>
+      {pendingItem && (
+  <div className="confirm-dialog">
+    <p>{t("reviewer.confirmAdDeletionBody")}</p>
+
+    <div className="confirm-dialog-actions">
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => setPendingItem(null)}
+      >
+        {t("reviewer.confirmCancel")}
+      </button>
+
+      <button
+        type="button"
+        className="reject-button"
+        onClick={() => {
+          onCheck(pendingItem.key, true);
+          setPendingItem(null);
+        }}
+      >
+        {t("reviewer.confirmAdDeletion")}
+      </button>
+    </div>
+  </div>
+)}
 
       {!isRejected && (
         <div className="reject-action">

@@ -57,6 +57,9 @@
     "requestInfoSubmitted": "Submitted on",
     "rejectReasonPlaceholder": "Explain what's missing or unresolved...",
     "rejectButton": "Reject this department's clearance",
+    "confirmAdDeletionBody": "This will permanently delete the employee from Active Directory. This cannot be undone.",
+    "confirmAdDeletion": "Yes, delete from Active Directory",
+    "confirmCancel": "Cancel"
     "rejectedBannerTitle": "This department's clearance was rejected",
     "rejectedBy": "Rejected by",
     "clearRejection": "Clear rejection and resume review"
