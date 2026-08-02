@@ -58,8 +58,12 @@ egas-clearance/
 We do NOT have real LDAP/Active Directory access yet. `backend/src/models/User.js`
 is a MongoDB collection that STANDS IN for real AD. Only
 `backend/src/routes/auth.routes.js` is allowed to know this is a mock — every other
-file just receives a JWT with `{ username, fullName, role, departmentKey }` and
-doesn't care where it came from. When real LDAP access shows up, only
+file just receives a JWT with `{ username, fullName, role, departmentKey,
+employeeMeta }` and doesn't care where it came from. `employeeMeta` (`jobTitle`,
+`department_ar`/`department_en`, `retirementDate`) is only meaningful when
+`role === "employee"`; `department_ar`/`department_en` is which EGAS department
+the employee actually works in, unrelated to the 13 clearance departments below
+(see "What's on a clearance request"). When real LDAP access shows up, only
 `auth.routes.js` needs to change (swap the `User.findOne` + `bcrypt.compare` for
 an LDAP bind call). Do not leak "this is a mock" assumptions into other files.
 
@@ -80,26 +84,38 @@ currently ships with ONE generic placeholder item so the app is demoable end to
 end. When real requirements come in, only `backend/src/seed/departments.data.js`
 needs to change — no route, model, or frontend logic changes.
 
-Three rules are enforced in `backend/src/routes/request.routes.js`, and ONLY there:
+Four rules are enforced in `backend/src/routes/request.routes.js`, and ONLY there:
 
-1. **Items within a department must be checked in ascending `order`**
+1. **Departments process strictly in order, not in parallel** (deliberate
+   change from the original design, 2026-08-02). A department is locked —
+   hidden from `GET /requests`, 403s on direct `GET /requests/:id`, 409s on
+   every mutating route — until every department before it in the request's
+   snapshotted department order has `status: "completed"`. `isDepartmentUnlocked()`
+   (a small helper at the top of the file) is the one place this lives. This
+   is what makes "IT signs last" work: IT is simply last in the order, so
+   nothing IT-specific is hardcoded anywhere — no `isFinal` special case.
+2. **Items within an unlocked department must be checked in ascending `order`**
    (`PATCH /:id/departments/:deptKey/items/:itemKey`).
-2. **A department with `isFinal: true`** (only IT, right now) **cannot have its
-   LAST item checked until every other department on the request has
-   `status: "completed"`.** This is what makes "IT signs last" work without
-   ever hardcoding the string "it" in the gating logic itself. A department
-   that's `"pending"` OR `"rejected"` both block this the same way.
-3. **A reviewer/admin can reject a department instead of checking an item**
+3. **Checking every item does NOT complete the department.** That's just
+   checklist prep — completion only happens via the explicit
+   `PATCH /:id/departments/:deptKey/finalize` action (the "Confirm department
+   clearance" button), matching a real signature rather than an implicit side
+   effect. `finalize` 400s if anything's still unchecked, and applies the same
+   rejected/locked guards as the item-check route. It's also the only place
+   `User.archivedFromAD` gets flipped (when finalizing the last department
+   completes the whole request).
+4. **A reviewer/admin can reject a department instead of finalizing it**
    (`PATCH /:id/departments/:deptKey/reject`, `{ rejected: true, reason }` —
    reason required), for when something's actually unresolved rather than
    just not done yet. Rejecting one department immediately flips the WHOLE
    request's `status` to `"rejected"` via `computeOverallStatus()` (a small
-   helper at the top of the file, shared by both this route and the
-   item-check route above) — this is why it lives in one function instead of
-   being recomputed inline in two places. A rejected department's checklist
-   items are frozen (item-check route 409s) until the same endpoint clears
-   the rejection (`{ rejected: false }`), which recomputes the department's
-   status from its already-checked items as if nothing had happened.
+   helper at the top of the file, shared across these routes) — this is why
+   it lives in one function instead of being recomputed inline in several
+   places. A rejected department's checklist items are frozen (item-check
+   route 409s) until the same endpoint clears the rejection
+   (`{ rejected: false }`), which always resumes the department at
+   `"pending"` — even if every item is already checked, finalizing still
+   requires the explicit action in rule 3.
 
 If you need to change any of this logic, it lives in exactly one place. Don't
 duplicate it in the frontend beyond the UX hints in `ChecklistPanel.jsx` — the
@@ -115,6 +131,16 @@ their `lastWorkingDay`. Both are required at submission
 NOT the department, which still always comes from the (mock) AD login. These,
 plus `createdAt` (free from Mongoose `timestamps`), are shown to every
 reviewer/admin who opens the request, not just the employee.
+
+It also snapshots `employeeDepartment_ar`/`employeeDepartment_en` from the
+submitting employee's `User.employeeMeta` at that moment (same snapshot-at-
+submission pattern as the department checklists, so it doesn't drift if the
+employee's record changes later). `RequestInfo` (used by both the reviewer's
+checklist view and admin's department-picker screen) shows this as the
+request's "Department" field — deliberately the employee's own EGAS
+department, not whichever of the 13 clearance departments' checklist happens
+to be open, since that's already shown in the "Checklist for X" heading right
+below it.
 
 ## Roles
 

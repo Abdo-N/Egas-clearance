@@ -30,11 +30,18 @@ const departmentSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true }, // e.g. "it", "security"
     name_ar: { type: String, required: true },
     name_en: { type: String, required: true },
-    order: { type: Number, required: true }, // display order on the clearance form
-    // Exactly one department should have isFinal = true. The system blocks
-    // that department's LAST checklist item from being checked until every
-    // other department's items are all checked -- this is what enforces
-    // "IT must sign last" without hardcoding "IT" anywhere in the logic.
+    // Real processing order, not just display: ClearanceRequest snapshots
+    // departments in this order at submission time, and a department stays
+    // locked until every department before it (by this order) has fully
+    // completed -- see isDepartmentUnlocked() in request.routes.js. This is
+    // what enforces "IT must sign last" (it just has the highest order)
+    // without ever hardcoding "IT" in that logic.
+    order: { type: Number, required: true },
+    // Exactly one department should have isFinal = true (IT). Unrelated to
+    // the ordering/locking above -- this only flags which department's LAST
+    // checklist item gets the extra "are you sure?" confirmation dialog on
+    // the frontend (see ChecklistPanel.jsx), since that item is the actual
+    // AD-deletion action.
     isFinal: { type: Boolean, default: false },
     checklistItems: { type: [checklistItemSchema], default: [] },
   },
