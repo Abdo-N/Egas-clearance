@@ -179,24 +179,33 @@ export default function ReviewerDashboard() {
               </div>
               <RequestInfo request={selected} t={t} lang={i18n.language} />
               <ul className="request-list">
-                {selected.departments.map((d) => (
-                  <li key={d.departmentKey}>
-                    <span className="request-list-dept">
-                      <DepartmentIcon departmentKey={d.departmentKey} className="request-list-icon" />
-                      {isAr ? d.name_ar : d.name_en}
-                    </span>
-                    <span className={`badge ${d.status}`}>
-                      {d.status === "completed"
-                        ? t("employee.departmentCompleted")
-                        : d.status === "rejected"
-                        ? t("employee.departmentRejected")
-                        : t("employee.departmentPending")}
-                    </span>
-                    <button className="secondary-button" onClick={() => setSelectedDeptKey(d.departmentKey)}>
-                      {t("reviewer.open")}
-                    </button>
-                  </li>
-                ))}
+                {selected.departments.map((d, idx) => {
+                  const isLocked =
+                    d.status === "pending" &&
+                    idx > 0 &&
+                    selected.departments.slice(0, idx).some((prior) => prior.status !== "completed");
+
+                  return (
+                    <li key={d.departmentKey}>
+                      <span className="request-list-dept">
+                        <DepartmentIcon departmentKey={d.departmentKey} className="request-list-icon" />
+                        {isAr ? d.name_ar : d.name_en}
+                      </span>
+                      <span className={`badge ${isLocked ? "upcoming" : d.status}`}>
+                        {d.status === "completed"
+                          ? t("employee.departmentCompleted")
+                          : d.status === "rejected"
+                          ? t("employee.departmentRejected")
+                          : isLocked
+                          ? t("employee.departmentUpcoming")
+                          : t("employee.departmentPending")}
+                      </span>
+                      <button className="secondary-button" onClick={() => setSelectedDeptKey(d.departmentKey)}>
+                        {t("reviewer.open")}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}

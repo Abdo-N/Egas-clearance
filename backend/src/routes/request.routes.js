@@ -15,6 +15,19 @@ function computeOverallStatus(departments) {
   return "in_progress";
 }
 
+// Departments are snapshotted onto the request in Department.order at
+// submission time (see POST / below), so array position IS the processing
+// order for that request from then on. A department only becomes visible/
+// actionable once every department before it in that order has fully
+// completed -- the first department has nothing before it, so it's always
+// unlocked. This is what makes IT "go last" (it's simply last in the array)
+// without ever hardcoding "it" here.
+function isDepartmentUnlocked(departments, deptKey) {
+  const idx = departments.findIndex((d) => d.departmentKey === deptKey);
+  if (idx <= 0) return true;
+  return departments.slice(0, idx).every((d) => d.status === "completed");
+}
+
 /**
  * EMPLOYEE: submit a new clearance request.
  * Snapshots every department's current checklist template onto the
@@ -90,7 +103,7 @@ router.get("/mine", requireAuth, requireRole("employee"), async (req, res) => {
 
 /**
  * REVIEWER: list requests that still need action from MY department.
- * ADMIN: list every request.
+ * ADMIN: list every request (admin sees everything regardless of lock state).
  */
 router.get("/", requireAuth, requireRole("reviewer", "admin"), async (req, res) => {
   if (req.user.role === "admin") {
@@ -104,7 +117,11 @@ router.get("/", requireAuth, requireRole("reviewer", "admin"), async (req, res) 
       $elemMatch: { departmentKey: req.user.departmentKey, status: { $in: ["pending", "rejected"] } },
     },
   }).sort({ createdAt: 1 });
-  res.json(mine);
+
+  // Only show it once every department before ours (in submission order)
+  // has completed -- see isDepartmentUnlocked.
+  const unlocked = mine.filter((r) => isDepartmentUnlocked(r.departments, req.user.departmentKey));
+  res.json(unlocked);
 });
 
 // Anyone involved in the request can fetch its detail (employee owner,
@@ -116,7 +133,8 @@ router.get("/:id", requireAuth, async (req, res) => {
   const isOwner = request.employeeUsername === req.user.username;
   const isReviewerForThis =
     req.user.role === "reviewer" &&
-    request.departments.some((d) => d.departmentKey === req.user.departmentKey);
+    request.departments.some((d) => d.departmentKey === req.user.departmentKey) &&
+    isDepartmentUnlocked(request.departments, req.user.departmentKey);
   const isAdmin = req.user.role === "admin";
 
   if (!isOwner && !isReviewerForThis && !isAdmin) {
@@ -130,11 +148,13 @@ router.get("/:id", requireAuth, async (req, res) => {
  * REVIEWER (or admin): check off one checklist item for their department.
  *
  * Enforces two rules baked in from the paper process:
- *   1. Items within a department must be checked in order (matches the
- *      IT department's required sequence: Phone -> PC -> ... -> AD deletion).
- *   2. A department flagged isFinal cannot have its LAST item checked until
- *      every other department on this request is "completed". This is what
- *      makes IT "go last" without hardcoding "IT" anywhere.
+ *   1. A department is locked until every department before it in the
+ *      request's department order has fully completed (isDepartmentUnlocked
+ *      above). This is what makes IT "go last" -- it's simply last in the
+ *      order -- without ever hardcoding "IT" anywhere.
+ *   2. Items within an unlocked department must still be checked in order
+ *      (matches the IT department's required sequence: Phone -> PC -> ... ->
+ *      AD deletion).
  */
 router.patch(
   "/:id/departments/:deptKey/items/:itemKey",
@@ -162,6 +182,12 @@ router.patch(
       });
     }
 
+    if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
+      return res.status(409).json({
+        error: "Every department before this one must complete their clearance first",
+      });
+    }
+
     const sortedItems = [...dept.items].sort((a, b) => a.order - b.order);
     const item = sortedItems.find((i) => i.key === req.params.itemKey);
     if (!item) return res.status(404).json({ error: "Item not found" });
@@ -171,19 +197,6 @@ router.patch(
       const priorUnchecked = sortedItems.slice(0, itemIndex).some((i) => !i.checked);
       if (priorUnchecked) {
         return res.status(400).json({ error: "Previous items in this department must be checked first" });
-      }
-
-      const isLastItem = itemIndex === sortedItems.length - 1;
-      if (dept.isFinal && isLastItem) {
-        const othersDone = request.departments
-          .filter((d) => d.departmentKey !== dept.departmentKey)
-          .every((d) => d.status === "completed");
-        if (!othersDone) {
-          return res.status(409).json({
-            error:
-              "All other departments must complete their clearance before this final step can be checked",
-          });
-        }
       }
     }
 
@@ -249,6 +262,12 @@ router.patch(
 
     if (req.user.role === "reviewer" && req.user.departmentKey !== dept.departmentKey) {
       return res.status(403).json({ error: "You can only reject on behalf of your own department" });
+    }
+
+    if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
+      return res.status(409).json({
+        error: "Every department before this one must complete their clearance first",
+      });
     }
 
     if (rejected) {

@@ -17,9 +17,9 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
   const [pendingItem, setPendingItem] = useState(null);
   const sorted = [...department.items].sort((a, b) => a.order - b.order);
 
-  const othersDone = allDepartments
-    .filter((d) => d.departmentKey !== department.departmentKey)
-    .every((d) => d.status === "completed");
+  const deptIndex = allDepartments.findIndex((d) => d.departmentKey === department.departmentKey);
+  const isLocked =
+    deptIndex > 0 && allDepartments.slice(0, deptIndex).some((d) => d.status !== "completed");
 
   function submitReject() {
     if (!reason.trim()) return;
@@ -47,13 +47,19 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
         </div>
       )}
 
+      {!isRejected && isLocked && (
+        <div className="rejection-banner">
+          <strong>{t("reviewer.departmentLockedTitle")}</strong>
+          <p>{t("reviewer.departmentLockedBody")}</p>
+        </div>
+      )}
+
       <ul>
         {sorted.map((item, idx) => {
           const priorUnchecked = sorted.slice(0, idx).some((i) => !i.checked);
           const isLast = idx === sorted.length - 1;
-          const finalBlocked = department.isFinal && isLast && !othersDone;
           const isDangerousFinalCheck = department.isFinal && isLast;
-          const disabled = item.checked ? false : priorUnchecked || finalBlocked;
+          const disabled = item.checked ? false : priorUnchecked || isLocked;
 
           return (
             <li key={item.key} className={item.checked ? "done" : ""}>
@@ -63,20 +69,17 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
                   checked={item.checked}
                   disabled={isRejected || disabled || busyKey === item.key}
                   onChange={(e) => {
-  if (isDangerousFinalCheck && e.target.checked) {
-    setPendingItem(item);
-  } else {
-    onCheck(item.key, e.target.checked);
-  }
-}}
+                    if (isDangerousFinalCheck && e.target.checked) {
+                      setPendingItem(item);
+                    } else {
+                      onCheck(item.key, e.target.checked);
+                    }
+                  }}
                 />
                 {isAr ? item.label_ar : item.label_en}
               </label>
-              {!isRejected && disabled && !item.checked && priorUnchecked && (
+              {!isRejected && !isLocked && disabled && !item.checked && priorUnchecked && (
                 <span className="hint">{t("reviewer.itemBlockedOrder")}</span>
-              )}
-              {!isRejected && disabled && !item.checked && !priorUnchecked && finalBlocked && (
-                <span className="hint">{t("reviewer.itemBlockedFinal")}</span>
               )}
             </li>
           );
@@ -109,7 +112,7 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
   </div>
 )}
 
-      {!isRejected && (
+      {!isRejected && !isLocked && (
         <div className="reject-action">
           <textarea
             className="reject-reason-input"

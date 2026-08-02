@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-01 (department rejection flow, by Nader + Claude).
+Last updated: 2026-08-02 (sequential department gating, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -101,11 +101,10 @@ Update this file whenever a task moves — don't let it go stale.
       three states purely from its position in the (already-ordered)
       department list: **done** (green, first N completed departments),
       **current** (gold/yellow, the first not-yet-completed one), **upcoming**
-      (gray, everything after that). Note this is a display simplification —
-      the backend does NOT actually enforce departments completing in this
-      order (only IT-must-be-last is a real rule) — so "current" really
-      means "next department whose signature is still needed," not
-      "actively being worked on."
+      (gray, everything after that). As of the sequential department gating
+      change below, this now reflects real backend enforcement — "current"
+      really is the one department currently actionable, not just a display
+      simplification anymore (see below).
 - [x] **Added a small hand-drawn icon per department** (shield for Security,
       scales for Legal, etc. — see `frontend/src/components/DepartmentIcon.jsx`,
       inline SVG, no new asset files/dependencies) shown on the employee
@@ -139,6 +138,30 @@ Update this file whenever a task moves — don't let it go stale.
       employee's `EmployeeDashboard.jsx` shows a red alert box listing every
       rejected department and its reason, and that department's tile in the
       progress grid turns red with a ✕ instead of green/gold/gray.
+- [x] **Departments now process strictly in order, not in parallel.** This is
+      a deliberate change from the original "12 departments parallel + IT
+      last" design (Nader's call, 2026-08-02) — a department is now locked
+      until every department before it in the request's department order
+      (i.e. `Department.order` at submission time, the same order the array
+      was already snapshotted in) has fully completed. `isDepartmentUnlocked()`
+      in `request.routes.js` is the one place this lives, replacing the old
+      IT-only "last item blocked" special case — IT going last now falls out
+      naturally from being last in the order, nothing IT-specific left in the
+      code. A locked department: doesn't show up in that reviewer's `GET
+      /requests` queue at all, 403s on direct `GET /requests/:id`, and 409s on
+      both the item-check and reject routes. Admin's top-level request list is
+      unaffected (admin still sees every request for oversight), but admin is
+      NOT exempt from the lock when acting on a specific department — same as
+      the old IT rule never exempted admin either. Frontend:
+      `ChecklistPanel.jsx` shows a "waiting on earlier departments" banner and
+      disables the whole checklist (not just checkboxes — also hides the
+      reject form) when locked; admin's per-department picker list shows a
+      "not started yet" badge for anything still locked. Updated
+      `backend/scripts/smoke-test.js` to match (it used to check IT's items
+      immediately after submission, which is no longer possible). Verified
+      live end-to-end against the running dev servers: a locked department's
+      queue is empty, direct ID access 403s, and it unlocks the moment the
+      department before it completes.
 
 ## Team update
 
