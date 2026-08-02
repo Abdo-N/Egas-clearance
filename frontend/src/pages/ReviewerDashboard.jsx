@@ -47,6 +47,7 @@ export default function ReviewerDashboard() {
   const [selectedDeptKey, setSelectedDeptKey] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
   const [rejecting, setRejecting] = useState(false);
+  const [sortBy, setSortBy] = useState("submitted");
 
   async function loadList() {
     const { data } = await client.get("/requests");
@@ -56,6 +57,21 @@ export default function ReviewerDashboard() {
   useEffect(() => {
     loadList();
   }, []);
+
+  function currentDepartmentLabel(r) {
+    const dept = r.departments.find((d) => d.status !== "completed") || r.departments[r.departments.length - 1];
+    return isAr ? dept.name_ar : dept.name_en;
+  }
+
+  const sortedRequests = [...requests].sort((a, b) => {
+    if (sortBy === "lastWorkingDay") {
+      return new Date(a.lastWorkingDay) - new Date(b.lastWorkingDay);
+    }
+    if (sortBy === "department") {
+      return currentDepartmentLabel(a).localeCompare(currentDepartmentLabel(b), i18n.language);
+    }
+    return 0; // "submitted" -- keep the server's order (already sorted by createdAt)
+  });
 
   const selected = requests.find((r) => r._id === selectedId);
   const activeDeptKey = user.role === "admin" ? selectedDeptKey : user.departmentKey;
@@ -129,8 +145,18 @@ export default function ReviewerDashboard() {
                 <h1>{t("reviewer.title")}</h1>
               </div>
               {requests.length === 0 && <p>{t("reviewer.empty")}</p>}
+              {requests.length > 0 && (
+                <div className="sort-control">
+                  <label htmlFor="reviewer-sort">{t("reviewer.sortLabel")}</label>
+                  <select id="reviewer-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                    <option value="submitted">{t("reviewer.sortSubmitted")}</option>
+                    <option value="lastWorkingDay">{t("reviewer.sortLastWorkingDay")}</option>
+                    <option value="department">{t("reviewer.sortDepartment")}</option>
+                  </select>
+                </div>
+              )}
               <ul className="request-list">
-                {requests.map((r) => (
+                {sortedRequests.map((r) => (
                   <li key={r._id}>
                     {t("reviewer.employee")}: {r.employeeFullName}
                     <button className="secondary-button" onClick={() => openRequest(r._id)}>

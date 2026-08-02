@@ -884,6 +884,23 @@ p {
 
 /* ---------- Request list (reviewer) ---------- */
 
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sort-control label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-500);
+}
+
+.sort-control select {
+  width: auto;
+}
+
 .request-list {
   list-style: none;
   padding: 0;

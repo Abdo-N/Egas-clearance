@@ -62,7 +62,11 @@
     "clearRejection": "إلغاء الرفض واستئناف المراجعة",
     "confirmAdDeletionBody": "سيؤدي هذا إلى حذف الموظف نهائيًا من الـ Active Directory. لا يمكن التراجع عن هذا الإجراء.",
     "confirmAdDeletion": "نعم، احذف من الـ Active Directory",
-    "confirmCancel": "إلغاء"
+    "confirmCancel": "إلغاء",
+    "sortLabel": "ترتيب حسب",
+    "sortSubmitted": "تاريخ التقديم",
+    "sortLastWorkingDay": "آخر يوم عمل",
+    "sortDepartment": "القسم"
   },
   "common": {
     "loading": "جاري التحميل..."
