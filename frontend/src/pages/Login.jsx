@@ -57,20 +57,32 @@ export default function Login() {
   return (
     <div
       style={{
-        backgroundImage: `url(${mainBackground})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
         minHeight: "100vh",
         width: "100vw",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        position: "relative"
+        position: "relative",
+        padding: "24px 0"
       }}
     >
+      {/* طبقة الخلفية -- ثابتة بحجم الشاشة، منفصلة عن ارتفاع المحتوى حتى لا
+          "تكبر" الصورة عند تمدد بطاقة تسجيل الدخول (مثلاً فتح حسابات الديمو) */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundImage: `url(${mainBackground})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          zIndex: 0
+        }}
+      />
+
       {/* كارت تسجيل الدخول الأبيض النظيف والمتسنتر بدقة */}
       <div
+        className="login-card"
         style={{
           backgroundColor: "#f4f5f6",
           width: "100%",
@@ -81,12 +93,28 @@ export default function Login() {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
+          position: "relative",
           zIndex: 10
         }}
       >
         {/* اللوجو الرسمي */}
-        <div style={{ textAlign: "center", marginBottom: "12px" }}>
+        <div style={{ textAlign: "center", marginBottom: "8px" }}>
           <img src={logoUrl} alt="EGAS" style={{ width: "64px", height: "64px", objectFit: "contain" }} />
+        </div>
+
+        {/* اسم الخدمة */}
+        <div
+          style={{
+            fontSize: "13px",
+            fontWeight: "700",
+            color: "#008069",
+            textTransform: "uppercase",
+            letterSpacing: "0.6px",
+            marginBottom: "10px",
+            textAlign: "center"
+          }}
+        >
+          {t("appTitle")}
         </div>
 
         {/* العناوين */}
@@ -152,6 +180,7 @@ export default function Login() {
           {/* زر تسجيل الدخول */}
           <button
             type="submit"
+            className="login-submit-btn"
             disabled={loading}
             style={{
               width: "100%",
@@ -174,6 +203,7 @@ export default function Login() {
           <button
             onClick={() => setShowDemo(!showDemo)}
             type="button"
+            className="login-demo-toggle-btn"
             style={{
               width: "100%",
               backgroundColor: "#e2e5e8",
@@ -186,50 +216,64 @@ export default function Login() {
               cursor: "pointer"
             }}
           >
-            <span>{showDemo ? "▼" : "▶"}</span> {t("login.demoAccounts.summary")}
+            <span
+              style={{
+                display: "inline-block",
+                transition: "transform 200ms ease",
+                transform: showDemo ? "rotate(90deg)" : "rotate(0deg)"
+              }}
+            >
+              ▶
+            </span>{" "}
+            {t("login.demoAccounts.summary")}
           </button>
 
-          {showDemo && (
-            <div style={{ backgroundColor: "#d8dcde", padding: "10px", borderRadius: "6px", marginTop: "5px", fontSize: "11px", color: "#444" }}>
-              <strong>{t("login.demoAccounts.employees")}</strong>
-              {demoEmployees.map((acc) => (
+          <div className={`demo-panel-wrapper${showDemo ? " open" : ""}`}>
+            <div className="demo-panel-inner">
+              <div style={{ backgroundColor: "#d8dcde", padding: "10px", borderRadius: "6px", marginTop: "5px", fontSize: "11px", color: "#444" }}>
+                <strong>{t("login.demoAccounts.employees")}</strong>
+                {demoEmployees.map((acc) => (
+                  <button
+                    type="button"
+                    key={acc.username}
+                    onClick={() => fillDemo(acc)}
+                    className="login-demo-account-btn"
+                    style={demoAccountButtonStyle}
+                  >
+                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                  </button>
+                ))}
+
+                <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.admin")}</strong>
                 <button
                   type="button"
-                  key={acc.username}
-                  onClick={() => fillDemo(acc)}
+                  onClick={() => fillDemo(demoAdmin)}
+                  className="login-demo-account-btn"
                   style={demoAccountButtonStyle}
                 >
-                  {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                  {isAr ? demoAdmin.label_ar : demoAdmin.label_en} <code>({demoAdmin.username})</code>
                 </button>
-              ))}
 
-              <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.admin")}</strong>
-              <button type="button" onClick={() => fillDemo(demoAdmin)} style={demoAccountButtonStyle}>
-                {isAr ? demoAdmin.label_ar : demoAdmin.label_en} <code>({demoAdmin.username})</code>
-              </button>
+                <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.departments")}</strong>
+                {demoReviewers.map((acc) => (
+                  <button
+                    type="button"
+                    key={acc.username}
+                    onClick={() => fillDemo(acc)}
+                    className="login-demo-account-btn"
+                    style={demoAccountButtonStyle}
+                  >
+                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                  </button>
+                ))}
 
-              <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.departments")}</strong>
-              {demoReviewers.map((acc) => (
-                <button
-                  type="button"
-                  key={acc.username}
-                  onClick={() => fillDemo(acc)}
-                  style={demoAccountButtonStyle}
-                >
-                  {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
-                </button>
-              ))}
-
-              <p style={{ margin: "8px 0 0" }}>
-                {t("login.demoAccounts.passwordNote")} <code>{demoPassword}</code>
-              </p>
-              <p style={{ margin: "2px 0 0", fontStyle: "italic" }}>{t("login.demoAccounts.fillHint")}</p>
+                <p style={{ margin: "8px 0 0" }}>
+                  {t("login.demoAccounts.passwordNote")} <code>{demoPassword}</code>
+                </p>
+                <p style={{ margin: "2px 0 0", fontStyle: "italic" }}>{t("login.demoAccounts.fillHint")}</p>
+              </div>
             </div>
-          )}
-        </div>
-
-        <div style={{ marginTop: "20px", fontSize: "11px", color: "#888", textAlign: "center" }}>
-          {t("appTitle")}
+          </div>
         </div>
       </div>
 

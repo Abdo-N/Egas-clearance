@@ -46,6 +46,34 @@
   box-sizing: border-box;
 }
 
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 html,
 body,
 #root {
@@ -73,6 +101,62 @@ p {
 }
 
 /* ---------- Login page ---------- */
+
+.login-card {
+  animation: fadeInUp 450ms ease both;
+}
+
+.login-submit-btn {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.login-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0, 128, 105, 0.35);
+}
+
+.login-submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.login-demo-toggle-btn {
+  transition: background-color 150ms ease;
+}
+
+.login-demo-toggle-btn:hover {
+  background-color: #d5d9dc;
+}
+
+.login-demo-account-btn {
+  transition: color 150ms ease, transform 150ms ease;
+}
+
+.login-demo-account-btn:hover {
+  color: #00614f;
+  transform: translateX(3px);
+}
+
+[dir="rtl"] .login-demo-account-btn:hover {
+  transform: translateX(-3px);
+}
+
+.demo-panel-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 280ms ease, visibility 280ms;
+}
+
+.demo-panel-wrapper.open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+
+.demo-panel-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 
 .login-page {
   min-height: 100vh;
@@ -343,6 +427,11 @@ p {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 800;
+  transition: background-color 200ms ease, color 200ms ease, transform 150ms ease;
+}
+
+.language-toggle button:hover:not(.is-active) {
+  transform: translateY(-1px);
 }
 
 .language-toggle button.is-active {
@@ -486,10 +575,18 @@ p {
   color: #fff;
   font-weight: 750;
   cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
 }
 
-.primary-button:hover {
+.primary-button:hover:not(:disabled) {
   background: var(--green-800);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(7, 85, 77, 0.28);
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .primary-button:disabled {
@@ -508,10 +605,16 @@ p {
   color: var(--green-800);
   font-weight: 700;
   cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
 }
 
-.secondary-button:hover {
+.secondary-button:hover:not(:disabled) {
   background: #edf7f5;
+  transform: translateY(-1px);
+}
+
+.secondary-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 /* ---------- Cards ---------- */
@@ -522,6 +625,7 @@ p {
   border-radius: var(--radius-lg);
   background: var(--card);
   box-shadow: var(--shadow-card);
+  animation: fadeInUp 350ms ease both;
 }
 
 .panel-card + .panel-card {
@@ -547,6 +651,7 @@ p {
   color: #526764;
   font-size: 0.78rem;
   font-weight: 700;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
 }
 
 .badge.pending {
@@ -609,6 +714,7 @@ p {
   border-radius: var(--radius-md);
   background: var(--rose-100);
   color: #7a2b2b;
+  animation: fadeInUp 250ms ease both;
 }
 
 .rejection-banner strong {
@@ -629,6 +735,7 @@ p {
   border-radius: var(--radius-md);
   background: var(--green-100);
   color: var(--green-800);
+  animation: fadeInUp 250ms ease both;
 }
 
 .finalize-action {
@@ -638,6 +745,7 @@ p {
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
+  animation: fadeIn 250ms ease both;
 }
 
 .finalize-action p {
@@ -654,6 +762,7 @@ p {
   border-radius: var(--radius-md);
   background: var(--rose-100);
   color: #7a2b2b;
+  animation: fadeInUp 250ms ease both;
 }
 
 .confirm-dialog-actions {
@@ -695,10 +804,16 @@ p {
   color: #fff;
   font-weight: 700;
   cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
 }
 
-.reject-button:hover {
+.reject-button:hover:not(:disabled) {
   background: #9e3a3a;
+  transform: translateY(-1px);
+}
+
+.reject-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .reject-button:disabled {
@@ -724,6 +839,14 @@ p {
   border-radius: var(--radius-md);
   background: #fff;
   text-align: center;
+  animation: fadeInUp 350ms ease both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+  transition: border-color 200ms ease, background-color 200ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.dept-progress-step:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-card);
 }
 
 .dept-progress-order {
@@ -970,6 +1093,13 @@ p {
   padding: 14px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
+  animation: fadeInUp 300ms ease both;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.request-list li:hover {
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
 }
 
 .request-list li > .secondary-button {
@@ -1030,6 +1160,10 @@ p {
   background: var(--green-100);
 }
 
+.checklist-panel li.order-blocked label {
+  opacity: 0.55;
+}
+
 .checklist-panel label {
   display: flex;
   align-items: center;
@@ -1041,6 +1175,11 @@ p {
   width: 18px;
   height: 18px;
   accent-color: var(--green-700);
+  transition: transform 150ms ease;
+}
+
+.checklist-panel input[type="checkbox"]:checked {
+  transform: scale(1.15);
 }
 
 .checklist-panel .hint {
@@ -1057,18 +1196,4 @@ p {
 [dir="rtl"] input[type="date"] {
   direction: ltr;
   text-align: right;
-}
-
-.confirm-dialog {
-  margin-top: 16px;
-  padding: 16px;
-  border: 1px solid #f3b3b3;
-  border-radius: 8px;
-  background: #fff7f7;
-}
-
-.confirm-dialog-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
 }

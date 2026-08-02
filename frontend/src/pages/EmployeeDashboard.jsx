@@ -173,7 +173,12 @@ export default function EmployeeDashboard() {
                   const marker = state === "done" ? "✓" : state === "rejected" ? "✕" : idx + 1;
 
                   return (
-                    <div className="dept-progress-step" data-state={state} key={d.departmentKey}>
+                    <div
+                      className="dept-progress-step"
+                      data-state={state}
+                      key={d.departmentKey}
+                      style={{ "--stagger": idx }}
+                    >
                       <span className="dept-progress-order">{idx + 1}</span>
                       <div className="dept-progress-icon">
                         <DepartmentIcon departmentKey={d.departmentKey} />
