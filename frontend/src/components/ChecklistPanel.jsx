@@ -25,6 +25,7 @@ export default function ChecklistPanel({
   const isCompleted = department.status === "completed";
   const [reason, setReason] = useState("");
   const [pendingItem, setPendingItem] = useState(null);
+  const [attemptedKey, setAttemptedKey] = useState(null);
   const sorted = [...department.items].sort((a, b) => a.order - b.order);
   const allChecked = sorted.length > 0 && sorted.every((i) => i.checked);
 
@@ -76,16 +77,26 @@ export default function ChecklistPanel({
           const priorUnchecked = sorted.slice(0, idx).some((i) => !i.checked);
           const isLast = idx === sorted.length - 1;
           const isDangerousFinalCheck = department.isFinal && isLast;
-          const disabled = item.checked ? false : priorUnchecked || isLocked;
+          const orderBlocked = !item.checked && priorUnchecked;
 
           return (
-            <li key={item.key} className={item.checked ? "done" : ""}>
+            <li
+              key={item.key}
+              className={[item.checked ? "done" : "", orderBlocked && !isLocked ? "order-blocked" : ""]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <label>
                 <input
                   type="checkbox"
                   checked={item.checked}
-                  disabled={isRejected || disabled || busyKey === item.key}
+                  disabled={isRejected || isLocked || busyKey === item.key}
                   onChange={(e) => {
+                    if (e.target.checked && orderBlocked) {
+                      setAttemptedKey(item.key);
+                      return;
+                    }
+                    setAttemptedKey(null);
                     if (isDangerousFinalCheck && e.target.checked) {
                       setPendingItem(item);
                     } else {
@@ -95,7 +106,7 @@ export default function ChecklistPanel({
                 />
                 {isAr ? item.label_ar : item.label_en}
               </label>
-              {!isRejected && !isLocked && disabled && !item.checked && priorUnchecked && (
+              {!isRejected && !isLocked && orderBlocked && attemptedKey === item.key && (
                 <span className="hint">{t("reviewer.itemBlockedOrder")}</span>
               )}
             </li>
