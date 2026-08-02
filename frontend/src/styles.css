@@ -619,6 +619,31 @@ p {
   color: #8a4a4a;
 }
 
+.success-banner {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border: 1px solid #aed2b9;
+  border-radius: var(--radius-md);
+  background: var(--green-100);
+  color: var(--green-800);
+}
+
+.finalize-action {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.finalize-action p {
+  color: var(--ink-700);
+}
+
 .confirm-dialog {
   display: grid;
   gap: 10px;

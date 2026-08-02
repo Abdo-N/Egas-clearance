@@ -77,7 +77,11 @@
     "sortLabel": "Sort by",
     "sortSubmitted": "Submission date",
     "sortLastWorkingDay": "Last working day",
-    "sortDepartment": "Department"
+    "sortDepartment": "Department",
+    "finalizeHint": "Every item is checked. Confirm to finalize this department's clearance.",
+    "finalizeButton": "Confirm department clearance",
+    "finalizing": "Confirming...",
+    "finalizedBanner": "This department's clearance is confirmed."
   },
   "common": {
     "loading": "Loading..."

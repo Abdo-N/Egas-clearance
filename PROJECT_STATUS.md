@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-02 (sequential department gating, by Nader + Claude).
+Last updated: 2026-08-02 (explicit finalize/confirm step, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -162,6 +162,29 @@ Update this file whenever a task moves — don't let it go stale.
       live end-to-end against the running dev servers: a locked department's
       queue is empty, direct ID access 403s, and it unlocks the moment the
       department before it completes.
+- [x] **Checking every checklist item no longer auto-completes a department —
+      finalizing now requires an explicit "Confirm" button.** New endpoint
+      `PATCH /requests/:id/departments/:deptKey/finalize` is the only place
+      `dept.status` becomes `"completed"` (400s if any item is still
+      unchecked, 409s if rejected or still locked behind an earlier
+      department — same guards as the item-check route). The item-check and
+      reject/clear-rejection routes now only ever set a department back to
+      `"pending"` (e.g. reopening one whose item got unchecked); they never
+      set `"completed"` themselves anymore. The mock-AD archival side effect
+      (`User.archivedFromAD`) moved from the item-check route to finalize,
+      since that's the only route that can now actually complete a request.
+      Frontend: `ChecklistPanel.jsx` shows a "Confirm department clearance"
+      button once every item is checked, and a green "clearance confirmed"
+      banner afterward instead of the checklist just silently locking in.
+      Note IT's existing AD-deletion confirm dialog (on checking the very
+      last item) is unrelated and unchanged — that still fires first, then
+      the new finalize button is what actually completes IT's department.
+      Updated `backend/scripts/smoke-test.js` (checking the last item no
+      longer completes the request — finalize does) and verified the full
+      flow live in-browser: check all 9 IT items (including the existing
+      AD-deletion confirm), see the new "Confirm department clearance"
+      button appear, click it, see the checklist freeze with a green
+      confirmation banner.
 
 ## Team update
 

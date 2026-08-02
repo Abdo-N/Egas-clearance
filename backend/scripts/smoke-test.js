@@ -11,6 +11,8 @@
  *     department order has fully completed. IT is simply last in that
  *     order, which is what makes it "go last" without special-casing it.
  *   - Items within an unlocked department must still be checked in order.
+ *   - Checking every item does NOT auto-complete a department -- that only
+ *     happens via the explicit PATCH .../finalize "confirm" action.
  */
 const BASE = process.env.BASE_URL || "http://localhost:4000/api";
 
@@ -30,6 +32,13 @@ async function patchItem(requestId, deptKey, itemKey, token, checked = true) {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ checked }),
+  });
+}
+
+async function finalizeDept(requestId, deptKey, token) {
+  return fetch(`${BASE}/requests/${requestId}/departments/${deptKey}/finalize`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
@@ -64,10 +73,23 @@ async function main() {
   console.log(secondDeptTooEarly.status, await secondDeptTooEarly.json());
   if (secondDeptTooEarly.status !== 409) throw new Error(`expected 409 -- ${nonItKeysInOrder[1]} should still be locked`);
 
-  console.log("--- clearing every non-IT department, strictly in order ---");
+  console.log("--- finalize should fail before the item is even checked (400) ---");
+  const tooEarlyFinalize = await finalizeDept(request._id, nonItKeysInOrder[0], adminToken);
+  console.log(tooEarlyFinalize.status, await tooEarlyFinalize.json());
+  if (tooEarlyFinalize.status !== 400) throw new Error("expected 400 -- can't finalize before every item is checked");
+
+  console.log("--- checking + finalizing every non-IT department, strictly in order ---");
   for (const deptKey of nonItKeysInOrder) {
-    const r = await patchItem(request._id, deptKey, "clearance", adminToken);
-    if (r.status !== 200) throw new Error(`failed to clear ${deptKey}: ${JSON.stringify(await r.json())}`);
+    const checkRes = await patchItem(request._id, deptKey, "clearance", adminToken);
+    if (checkRes.status !== 200) throw new Error(`failed to check ${deptKey}: ${JSON.stringify(await checkRes.json())}`);
+    const checkJson = await checkRes.json();
+    const dept = checkJson.departments.find((d) => d.departmentKey === deptKey);
+    if (dept.status === "completed") {
+      throw new Error(`${deptKey} auto-completed on check -- finalize should be required`);
+    }
+
+    const finalizeRes = await finalizeDept(request._id, deptKey, adminToken);
+    if (finalizeRes.status !== 200) throw new Error(`failed to finalize ${deptKey}: ${JSON.stringify(await finalizeRes.json())}`);
   }
   console.log("done");
 
@@ -83,8 +105,16 @@ async function main() {
   }
   console.log("done");
 
-  console.log("--- IT: final AD deletion now should succeed (200) ---");
-  const final = await patchItem(request._id, "it", "ad_deletion", itToken);
+  console.log("--- IT: checking the last item does NOT auto-complete the request ---");
+  const lastCheck = await patchItem(request._id, "it", "ad_deletion", itToken);
+  const lastCheckJson = await lastCheck.json();
+  if (lastCheck.status !== 200) throw new Error(`failed to check ad_deletion: ${JSON.stringify(lastCheckJson)}`);
+  if (lastCheckJson.status === "completed") {
+    throw new Error("request auto-completed on check -- finalize should be required");
+  }
+
+  console.log("--- IT: finalize now should complete the whole request (200) ---");
+  const final = await finalizeDept(request._id, "it", itToken);
   const finalJson = await final.json();
   console.log(final.status, "overall request status:", finalJson.status);
   if (final.status !== 200 || finalJson.status !== "completed") {

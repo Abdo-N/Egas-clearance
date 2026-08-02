@@ -77,7 +77,11 @@
     "sortLabel": "ترتيب حسب",
     "sortSubmitted": "تاريخ التقديم",
     "sortLastWorkingDay": "آخر يوم عمل",
-    "sortDepartment": "القسم"
+    "sortDepartment": "القسم",
+    "finalizeHint": "تم تحديد جميع العناصر. اضغط تأكيد لإتمام إخلاء طرف هذا القسم.",
+    "finalizeButton": "تأكيد إخلاء طرف القسم",
+    "finalizing": "جارٍ التأكيد...",
+    "finalizedBanner": "تم تأكيد إخلاء الطرف الخاص بهذا القسم."
   },
   "common": {
     "loading": "جاري التحميل..."

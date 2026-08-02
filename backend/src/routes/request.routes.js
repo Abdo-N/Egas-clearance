@@ -206,13 +206,72 @@ router.patch(
     realItem.checkedBy = checked ? req.user.username : null;
     realItem.checkedAt = checked ? new Date() : null;
 
+    // Checking every box no longer auto-completes the department -- that now
+    // requires the explicit PATCH .../finalize action below (the "confirm"
+    // button), matching a real signature rather than an implicit side
+    // effect. Unchecking an item on an already-completed department DOES
+    // reopen it back to "pending", though, since a completed department
+    // should never have an unchecked item.
     const allChecked = dept.items.every((i) => i.checked);
-    dept.status = allChecked ? "completed" : "pending";
-    dept.completedAt = allChecked ? new Date() : null;
+    if (!allChecked) {
+      dept.status = "pending";
+      dept.completedAt = null;
+    }
 
-    // If this was the final department's last item, the employee is fully
-    // cleared. Also flip their mock-AD record so it's visible the "deletion"
-    // happened (see User.archivedFromAD).
+    request.status = computeOverallStatus(request.departments);
+    request.completedAt = request.status === "completed" ? new Date() : null;
+
+    await request.save();
+    res.json(request);
+  }
+);
+
+/**
+ * REVIEWER (or admin): finalize (confirm) a department once every item on
+ * its checklist is checked. This is the actual "sign-off" -- matches a
+ * physical signature on the paper form -- and is the only way a department's
+ * status becomes "completed". If this was the last department needed, the
+ * employee is now fully cleared, so we also flip their mock-AD record here
+ * (see User.archivedFromAD).
+ */
+router.patch(
+  "/:id/departments/:deptKey/finalize",
+  requireAuth,
+  requireRole("reviewer", "admin"),
+  async (req, res) => {
+    const request = await ClearanceRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Not found" });
+
+    const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
+    if (!dept) return res.status(404).json({ error: "Department not on this request" });
+
+    if (req.user.role === "reviewer" && req.user.departmentKey !== dept.departmentKey) {
+      return res.status(403).json({ error: "You can only finalize your own department" });
+    }
+
+    if (dept.status === "rejected") {
+      return res.status(409).json({
+        error: "This department's clearance was rejected. Clear the rejection before finalizing.",
+      });
+    }
+
+    if (dept.status === "completed") {
+      return res.status(409).json({ error: "This department is already finalized" });
+    }
+
+    if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
+      return res.status(409).json({
+        error: "Every department before this one must complete their clearance first",
+      });
+    }
+
+    if (!dept.items.every((i) => i.checked)) {
+      return res.status(400).json({ error: "Every checklist item must be checked before finalizing" });
+    }
+
+    dept.status = "completed";
+    dept.completedAt = new Date();
+
     request.status = computeOverallStatus(request.departments);
     request.completedAt = request.status === "completed" ? new Date() : null;
 
@@ -238,8 +297,9 @@ router.patch(
  *
  * Checklist items on a rejected department are frozen (see the item-check
  * route's guard above) until a reviewer/admin clears the rejection here,
- * which recomputes the department's status from its items as if nothing
- * had happened.
+ * which resumes the department at "pending" -- even if every item is
+ * already checked, finalizing still requires the explicit PATCH
+ * .../finalize action.
  */
 router.patch(
   "/:id/departments/:deptKey/reject",
@@ -276,9 +336,11 @@ router.patch(
       dept.rejectedBy = req.user.username;
       dept.rejectedAt = new Date();
     } else {
-      const allChecked = dept.items.every((i) => i.checked);
-      dept.status = allChecked ? "completed" : "pending";
-      dept.completedAt = allChecked ? new Date() : null;
+      // Resume at "pending" even if every item happens to already be
+      // checked -- completion always requires the explicit finalize action,
+      // never an implicit recompute, same as the item-check route.
+      dept.status = "pending";
+      dept.completedAt = null;
       dept.rejectedReason = null;
       dept.rejectedBy = null;
       dept.rejectedAt = null;

@@ -9,13 +9,24 @@ import { formatDate } from "../utils/formatDate";
  * enforces server-side (this is just for a good UX -- the backend PATCH
  * will reject an out-of-order or too-early-final check regardless).
  */
-export default function ChecklistPanel({ department, allDepartments, onCheck, onReject, busyKey, rejecting }) {
+export default function ChecklistPanel({
+  department,
+  allDepartments,
+  onCheck,
+  onReject,
+  onFinalize,
+  busyKey,
+  rejecting,
+  finalizing,
+}) {
   const { i18n, t } = useTranslation();
   const isAr = i18n.language === "ar";
   const isRejected = department.status === "rejected";
+  const isCompleted = department.status === "completed";
   const [reason, setReason] = useState("");
   const [pendingItem, setPendingItem] = useState(null);
   const sorted = [...department.items].sort((a, b) => a.order - b.order);
+  const allChecked = sorted.length > 0 && sorted.every((i) => i.checked);
 
   const deptIndex = allDepartments.findIndex((d) => d.departmentKey === department.departmentKey);
   const isLocked =
@@ -54,6 +65,12 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
         </div>
       )}
 
+      {isCompleted && (
+        <div className="success-banner">
+          <strong>{t("reviewer.finalizedBanner")}</strong>
+        </div>
+      )}
+
       <ul>
         {sorted.map((item, idx) => {
           const priorUnchecked = sorted.slice(0, idx).some((i) => !i.checked);
@@ -85,6 +102,16 @@ export default function ChecklistPanel({ department, allDepartments, onCheck, on
           );
         })}
       </ul>
+
+      {!isRejected && !isLocked && !isCompleted && allChecked && (
+        <div className="finalize-action">
+          <p>{t("reviewer.finalizeHint")}</p>
+          <button type="button" className="primary-button" disabled={finalizing} onClick={onFinalize}>
+            {finalizing ? t("reviewer.finalizing") : t("reviewer.finalizeButton")}
+          </button>
+        </div>
+      )}
+
       {pendingItem && (
   <div className="confirm-dialog">
     <p>{t("reviewer.confirmAdDeletionBody")}</p>

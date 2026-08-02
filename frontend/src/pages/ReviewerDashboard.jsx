@@ -47,6 +47,7 @@ export default function ReviewerDashboard() {
   const [selectedDeptKey, setSelectedDeptKey] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
   const [rejecting, setRejecting] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [sortBy, setSortBy] = useState("submitted");
 
   async function loadList() {
@@ -101,6 +102,21 @@ export default function ReviewerDashboard() {
       alert(err.response?.data?.error || "Failed to update item");
     } finally {
       setBusyKey(null);
+    }
+  }
+
+  async function handleFinalize() {
+    if (!selected || !myDept) return;
+    setFinalizing(true);
+    try {
+      const { data } = await client.patch(
+        `/requests/${selected._id}/departments/${myDept.departmentKey}/finalize`
+      );
+      setRequests((prev) => prev.map((r) => (r._id === data._id ? data : r)));
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to finalize department");
+    } finally {
+      setFinalizing(false);
     }
   }
 
@@ -229,8 +245,10 @@ export default function ReviewerDashboard() {
                 allDepartments={selected.departments}
                 onCheck={handleCheck}
                 onReject={handleReject}
+                onFinalize={handleFinalize}
                 busyKey={busyKey}
                 rejecting={rejecting}
+                finalizing={finalizing}
               />
             </>
           )}
