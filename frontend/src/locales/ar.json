@@ -59,7 +59,10 @@
     "rejectButton": "رفض إخلاء الطرف الخاص بهذا القسم",
     "rejectedBannerTitle": "تم رفض إخلاء الطرف الخاص بهذا القسم",
     "rejectedBy": "تم الرفض بواسطة",
-    "clearRejection": "إلغاء الرفض واستئناف المراجعة"
+    "clearRejection": "إلغاء الرفض واستئناف المراجعة",
+    "confirmAdDeletionBody": "سيؤدي هذا إلى حذف الموظف نهائيًا من الـ Active Directory. لا يمكن التراجع عن هذا الإجراء.",
+    "confirmAdDeletion": "نعم، احذف من الـ Active Directory",
+    "confirmCancel": "إلغاء"
   },
   "common": {
     "loading": "جاري التحميل..."
