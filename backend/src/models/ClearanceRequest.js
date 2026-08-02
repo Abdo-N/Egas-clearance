@@ -48,6 +48,14 @@ const clearanceRequestSchema = new mongoose.Schema(
   {
     employeeUsername: { type: String, required: true },
     employeeFullName: { type: String, required: true },
+    // Snapshotted from User.employeeMeta at submission (see POST / in
+    // request.routes.js) -- which EGAS department the employee actually
+    // works in, NOT one of the 13 clearance departments in `departments`
+    // below. Shown to reviewers so they have context on who they're
+    // clearing, instead of just re-showing the clearance department whose
+    // checklist they're already looking at.
+    employeeDepartment_ar: { type: String, default: "" },
+    employeeDepartment_en: { type: String, default: "" },
     reason: { type: String, enum: LEAVING_REASONS, required: true },
     lastWorkingDay: { type: Date, required: true },
     // Mirrors the "any department rejected?" state across all departments --

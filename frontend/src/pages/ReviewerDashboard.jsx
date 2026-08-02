@@ -193,7 +193,12 @@ export default function ReviewerDashboard() {
                 <h1>{selected.employeeFullName}</h1>
                 <p>{t("reviewer.selectDepartment")}</p>
               </div>
-              <RequestInfo request={selected} t={t} lang={i18n.language} />
+              <RequestInfo
+                request={selected}
+                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
+                t={t}
+                lang={i18n.language}
+              />
               <ul className="request-list">
                 {selected.departments.map((d, idx) => {
                   const isLocked =
@@ -236,7 +241,7 @@ export default function ReviewerDashboard() {
               </div>
               <RequestInfo
                 request={selected}
-                departmentLabel={isAr ? myDept.name_ar : myDept.name_en}
+                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
                 t={t}
                 lang={i18n.language}
               />

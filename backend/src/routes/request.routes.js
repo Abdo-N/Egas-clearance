@@ -68,6 +68,8 @@ router.post("/", requireAuth, requireRole("employee"), async (req, res) => {
   const request = await ClearanceRequest.create({
     employeeUsername: req.user.username,
     employeeFullName: req.user.fullName,
+    employeeDepartment_ar: req.user.employeeMeta?.department_ar || "",
+    employeeDepartment_en: req.user.employeeMeta?.department_en || "",
     reason,
     lastWorkingDay: parsedLastWorkingDay,
     departments: departments.map((d) => ({

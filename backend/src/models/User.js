@@ -20,9 +20,16 @@ const userSchema = new mongoose.Schema(
     },
     // Only set when role === "reviewer": which department this person checks off.
     departmentKey: { type: String, default: null },
-    // Only meaningful when role === "employee".
+    // Only meaningful when role === "employee". department_ar/department_en
+    // is which EGAS department this employee actually WORKS in -- unrelated
+    // to the 13 clearance departments in Department.js, which are who signs
+    // off on their clearance, not where they work. Might legitimately be one
+    // of the same names (e.g. someone from Warehouses retiring), but they're
+    // conceptually different fields.
     employeeMeta: {
       jobTitle: { type: String, default: "" },
+      department_ar: { type: String, default: "" },
+      department_en: { type: String, default: "" },
       retirementDate: { type: Date, default: null },
     },
     // Flips to true once the IT department deletes this person from AD.

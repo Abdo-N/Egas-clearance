@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-02 (explicit finalize/confirm step, by Nader + Claude).
+Last updated: 2026-08-02 (show employee's own department to reviewers, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -185,6 +185,24 @@ Update this file whenever a task moves — don't let it go stale.
       AD-deletion confirm), see the new "Confirm department clearance"
       button appear, click it, see the checklist freeze with a green
       confirmation banner.
+- [x] **Reviewers now see the employee's actual EGAS department, not the
+      clearance department they're already reviewing.** The request-info
+      panel's "Department" field used to show `myDept.name_ar/en` — i.e.
+      whichever of the 13 clearance departments' checklist you had open,
+      which was redundant with the "Checklist for X" heading right below it.
+      Added `User.employeeMeta.department_ar/en` (which EGAS department the
+      employee actually works in — unrelated to the 13 clearance
+      departments, though it can coincidentally share a name, e.g.
+      `mohamed.retiring`'s is "General Administration of Warehouses", same
+      as one of the clearance departments), threaded through the JWT payload
+      (`auth.routes.js`) and snapshotted onto `ClearanceRequest` at
+      submission (`employeeDepartment_ar/en`, same pattern as every other
+      snapshotted field) so it doesn't drift if the employee's record
+      changes later. `RequestInfo` now shows this on both the checklist view
+      and admin's department-picker screen. Seeded both demo employees with
+      real department names borrowed from `departments.data.js` (Sara →
+      Financial Affairs, Mohamed → Warehouses). Verified live in-browser in
+      both languages plus the admin picker screen.
 
 ## Team update
 

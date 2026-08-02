@@ -30,6 +30,7 @@ router.post("/login", async (req, res) => {
     fullName: user.fullName,
     role: user.role,
     departmentKey: user.departmentKey,
+    employeeMeta: user.employeeMeta,
   };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
