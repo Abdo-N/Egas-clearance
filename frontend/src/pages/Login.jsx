@@ -3,12 +3,29 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import SupportModal from "../components/SupportModal";
+import LanguageToggle from "../components/LanguageToggle";
+import logoUrl from "../assets/egas-logo.png";
+import { demoEmployees, demoAdmin, demoReviewers, demoPassword } from "../demoAccounts";
 
 // الخلفية الكبيرة للشاشة بالكامل (المنصة والغروب)
 import mainBackground from "../assets/egas-bg.jpg";
 
+const demoAccountButtonStyle = {
+  display: "block",
+  width: "100%",
+  textAlign: "inherit",
+  background: "none",
+  border: "none",
+  padding: "4px 0",
+  margin: 0,
+  fontSize: "11px",
+  color: "#008069",
+  cursor: "pointer",
+};
+
 export default function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isAr = i18n.language === "ar";
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -17,6 +34,11 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
+
+  function fillDemo(account) {
+    setUsername(account.username);
+    setPassword(demoPassword);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -63,29 +85,24 @@ export default function Login() {
           zIndex: 10
         }}
       >
-        {/* اللوجو الأخضر الرسمي */}
+        {/* اللوجو الرسمي */}
         <div style={{ textAlign: "center", marginBottom: "12px" }}>
-          <svg width="50" height="50" viewBox="0 0 100 100" fill="#008069">
-            <path d="M50 10 L60 35 L85 20 L70 45 L95 50 L70 60 L85 80 L60 70 L50 95 L40 70 L15 80 L30 60 L5 50 L30 45 L15 20 L40 35 Z" />
-          </svg>
-          <div style={{ fontWeight: "bold", color: "#008069", fontSize: "14px", marginTop: "2px", letterSpacing: "1.5px" }}>
-            EGAS
-          </div>
+          <img src={logoUrl} alt="EGAS" style={{ width: "64px", height: "64px", objectFit: "contain" }} />
         </div>
 
         {/* العناوين */}
         <h2 style={{ margin: "0 0 5px 0", fontSize: "22px", color: "#111", fontWeight: "600" }}>
-          Sign in
+          {t("login.title")}
         </h2>
         <p style={{ margin: "0 0 20px 0", fontSize: "12px", color: "#666", textAlign: "center" }}>
-          Sign in with your company Active Directory account
+          {t("login.subtitle")}
         </p>
 
         {/* الحقول والنموذج */}
         <form onSubmit={handleSubmit} style={{ width: "100%" }}>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "13px", color: "#333", marginBottom: "5px", fontWeight: "500" }}>
-              Username
+              {t("login.username")}
             </label>
             <input
               type="text"
@@ -107,7 +124,7 @@ export default function Login() {
 
           <div style={{ marginBottom: "20px" }}>
             <label style={{ display: "block", fontSize: "13px", color: "#333", marginBottom: "5px", fontWeight: "500" }}>
-              Password
+              {t("login.password")}
             </label>
             <input
               type="password"
@@ -149,7 +166,7 @@ export default function Login() {
               cursor: loading ? "not-allowed" : "pointer"
             }}
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? t("employee.submitting") : t("login.submit")}
           </button>
         </form>
 
@@ -166,27 +183,59 @@ export default function Login() {
               padding: "8px 12px",
               fontSize: "12px",
               color: "#333",
-              textAlign: "left",
+              textAlign: isAr ? "right" : "left",
               cursor: "pointer"
             }}
           >
-            <span>{showDemo ? "▼" : "▶"}</span> Demo accounts (temporary, for testing)
+            <span>{showDemo ? "▼" : "▶"}</span> {t("login.demoAccounts.summary")}
           </button>
 
           {showDemo && (
             <div style={{ backgroundColor: "#d8dcde", padding: "10px", borderRadius: "6px", marginTop: "5px", fontSize: "11px", color: "#444" }}>
-              <p style={{ margin: "2px 0" }}><strong>Employee:</strong> emp / 123</p>
-              <p style={{ margin: "2px 0" }}><strong>Reviewer:</strong> rev / 123</p>
+              <strong>{t("login.demoAccounts.employees")}</strong>
+              {demoEmployees.map((acc) => (
+                <button
+                  type="button"
+                  key={acc.username}
+                  onClick={() => fillDemo(acc)}
+                  style={demoAccountButtonStyle}
+                >
+                  {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                </button>
+              ))}
+
+              <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.admin")}</strong>
+              <button type="button" onClick={() => fillDemo(demoAdmin)} style={demoAccountButtonStyle}>
+                {isAr ? demoAdmin.label_ar : demoAdmin.label_en} <code>({demoAdmin.username})</code>
+              </button>
+
+              <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.departments")}</strong>
+              {demoReviewers.map((acc) => (
+                <button
+                  type="button"
+                  key={acc.username}
+                  onClick={() => fillDemo(acc)}
+                  style={demoAccountButtonStyle}
+                >
+                  {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                </button>
+              ))}
+
+              <p style={{ margin: "8px 0 0" }}>
+                {t("login.demoAccounts.passwordNote")} <code>{demoPassword}</code>
+              </p>
+              <p style={{ margin: "2px 0 0", fontStyle: "italic" }}>{t("login.demoAccounts.fillHint")}</p>
             </div>
           )}
         </div>
 
         <div style={{ marginTop: "20px", fontSize: "11px", color: "#888", textAlign: "center" }}>
-          EGAS Employee Clearance
+          {t("appTitle")}
         </div>
       </div>
 
       <SupportModal />
+      <LanguageToggle />
     </div>
   );
 }
