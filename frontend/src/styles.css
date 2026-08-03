@@ -36,6 +36,8 @@
   --gold-border: #e9cf9a;
   --rose-600: #b64444;
   --rose-100: #fff0f0;
+  --indigo-600: #4c4fab;
+  --indigo-100: #ecebfa;
   --radius-sm: 9px;
   --radius-md: 12px;
   --radius-lg: 14px;
@@ -665,10 +667,51 @@ p {
   color: var(--green-800);
 }
 
-.badge.rejected {
-  background: var(--rose-100);
-  color: var(--rose-600);
-  border: 1px solid #efb7b7;
+.badge.archived {
+  min-width: unset;
+  background: var(--indigo-100);
+  color: var(--indigo-600);
+}
+
+.badge.awaiting {
+  background: var(--gold-100);
+  color: var(--gold-600);
+  border: 1px solid var(--gold-border);
+}
+
+.archived-marker,
+.awaiting-marker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 14px 0;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.archived-marker {
+  border: 1px solid #cfcdf0;
+  background: var(--indigo-100);
+  color: var(--indigo-600);
+}
+
+.archived-marker small {
+  font-weight: 500;
+  color: #6a68b8;
+}
+
+.awaiting-marker {
+  border: 1px solid var(--gold-border);
+  background: var(--gold-100);
+  color: var(--gold-600);
+}
+
+.oversight-grid-it-note {
+  flex-basis: 100%;
+  color: var(--gold-600);
+  font-weight: 600;
 }
 
 .overall-status {
@@ -680,29 +723,7 @@ p {
   color: var(--green-800);
 }
 
-/* ---------- Rejection UI ---------- */
-
-.rejection-alert {
-  padding: 14px 16px;
-  margin-bottom: 20px;
-  border: 1px solid #efb7b7;
-  border-radius: var(--radius-md);
-  background: var(--rose-100);
-  color: #7a2b2b;
-}
-
-.rejection-alert strong {
-  color: var(--rose-600);
-}
-
-.rejection-alert ul {
-  margin: 8px 0 0;
-  padding-inline-start: 18px;
-}
-
-.rejection-alert li + li {
-  margin-top: 4px;
-}
+/* ---------- Locked-department / danger banners ---------- */
 
 .rejection-banner {
   display: grid;
@@ -738,60 +759,6 @@ p {
   animation: fadeInUp 250ms ease both;
 }
 
-.finalize-action {
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  animation: fadeIn 250ms ease both;
-}
-
-.finalize-action p {
-  color: var(--ink-700);
-}
-
-.confirm-dialog {
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  padding: 14px 16px;
-  margin-top: 18px;
-  border: 1px solid #efb7b7;
-  border-radius: var(--radius-md);
-  background: var(--rose-100);
-  color: #7a2b2b;
-  animation: fadeInUp 250ms ease both;
-}
-
-.confirm-dialog-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.reject-action {
-  display: grid;
-  gap: 10px;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.reject-reason-input {
-  width: 100%;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid #c8c8c8;
-  border-radius: var(--radius-sm);
-  resize: vertical;
-}
-
-.reject-reason-input:focus {
-  outline: none;
-  border-color: var(--rose-600);
-  box-shadow: 0 0 0 3px rgba(182, 68, 68, 0.15);
-}
-
 .reject-button {
   justify-self: start;
   display: inline-flex;
@@ -819,153 +786,6 @@ p {
 .reject-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* ---------- Department progress grid (no scrolling -- wraps to fit) ---------- */
-
-.dept-progress-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-}
-
-.dept-progress-step {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 16px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: #fff;
-  text-align: center;
-  animation: fadeInUp 350ms ease both;
-  animation-delay: calc(var(--stagger, 0) * 40ms);
-  transition: border-color 200ms ease, background-color 200ms ease, transform 150ms ease, box-shadow 150ms ease;
-}
-
-.dept-progress-step:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-card);
-}
-
-.dept-progress-order {
-  position: absolute;
-  top: 8px;
-  inset-inline-start: 8px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--ink-900);
-  color: #fff;
-  font-size: 0.62rem;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dept-progress-step[data-state="done"] {
-  border-color: #aed2b9;
-  background: var(--green-100);
-}
-
-.dept-progress-step[data-state="current"] {
-  border-color: var(--gold-border);
-  background: var(--gold-100);
-}
-
-.dept-progress-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--ink-500);
-}
-
-.dept-progress-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.dept-progress-step[data-state="done"] .dept-progress-icon {
-  color: var(--green-800);
-}
-
-.dept-progress-step[data-state="current"] .dept-progress-icon {
-  color: var(--gold-600);
-}
-
-.dept-progress-marker {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 2px solid var(--line);
-  background: #fff;
-  color: var(--ink-500);
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.dept-progress-step[data-state="done"] .dept-progress-marker {
-  border-color: var(--green-700);
-  background: var(--green-700);
-  color: #fff;
-}
-
-.dept-progress-step[data-state="current"] .dept-progress-marker {
-  border-color: var(--gold-600);
-  border-style: dashed;
-  background: #fff;
-  color: var(--gold-600);
-}
-
-.dept-progress-label {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: var(--ink-900);
-  line-height: 1.3;
-}
-
-.dept-progress-tag {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: #eef4f3;
-  color: #526764;
-  font-size: 0.66rem;
-  font-weight: 700;
-}
-
-.dept-progress-step[data-state="done"] .dept-progress-tag {
-  background: #fff;
-  color: var(--green-800);
-}
-
-.dept-progress-step[data-state="current"] .dept-progress-tag {
-  background: #fff;
-  color: var(--gold-600);
-}
-
-.dept-progress-step[data-state="rejected"] {
-  border-color: #efb7b7;
-  background: var(--rose-100);
-}
-
-.dept-progress-step[data-state="rejected"] .dept-progress-icon {
-  color: var(--rose-600);
-}
-
-.dept-progress-step[data-state="rejected"] .dept-progress-marker {
-  border-color: var(--rose-600);
-  background: var(--rose-600);
-  color: #fff;
-}
-
-.dept-progress-step[data-state="rejected"] .dept-progress-tag {
-  background: #fff;
-  color: var(--rose-600);
 }
 
 /* ---------- Reason-for-leaving radio group ---------- */
@@ -1033,49 +853,68 @@ p {
   }
 }
 
-/* ---------- Request list (reviewer) ---------- */
+/* ---------- Reviewer dashboard: stat tiles + section titles ---------- */
 
-.sort-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
-  padding: 8px 16px;
-  background: #fff;
+.dept-stats-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.dept-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  min-width: 140px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
+  background: #fff;
   box-shadow: var(--shadow-card);
 }
 
-.sort-control label {
-  font-size: 0.82rem;
-  font-weight: 700;
+.dept-stat-tile strong {
+  font-size: 1.6rem;
+  color: var(--ink-900);
+}
+
+.dept-stat-tile span {
+  font-size: 0.8rem;
   color: var(--ink-700);
-  white-space: nowrap;
 }
 
-.sort-control select {
-  width: auto;
-  border: 1px solid var(--green-700);
-  border-radius: 999px;
-  padding: 6px 14px;
-  background: var(--green-100);
-  color: var(--green-800);
-  font-weight: 700;
-  font-size: 0.82rem;
-  cursor: pointer;
-  outline: none;
-  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+.dept-stat-tile--pending strong {
+  color: var(--gold-600);
 }
 
-.sort-control select:hover {
-  background: #d9ece7;
+.dept-stat-tile--overdue strong {
+  color: var(--rose-600);
 }
 
-.sort-control select:focus-visible {
-  border-color: var(--green-800);
-  box-shadow: 0 0 0 3px rgba(11, 107, 96, 0.18);
+.dept-stat-tile--archived strong {
+  color: var(--indigo-600);
 }
+
+.request-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.request-row-info small {
+  color: var(--ink-500);
+}
+
+.request-list-section-title {
+  margin: 18px 0 10px;
+  font-size: 0.95rem;
+  color: var(--ink-700);
+}
+
+/* ---------- Request list (reviewer) ---------- */
 
 .request-list {
   list-style: none;
@@ -1160,33 +999,385 @@ p {
   background: var(--green-100);
 }
 
-.checklist-panel li.order-blocked label {
-  opacity: 0.55;
+/* ---------- Signature form (password re-auth + evidence upload) ---------- */
+
+.signature-form {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
 }
 
-.checklist-panel label {
+.signature-form .form-group {
+  margin-bottom: 0.75rem;
+}
+
+.signature-item-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.signature-item-mine-tag {
+  min-width: unset;
+  padding: 3px 10px;
+}
+
+.signature-confirmed {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.signature-confirmed small {
+  color: var(--ink-500);
+}
+
+.success-banner small {
+  color: var(--ink-500);
+}
+
+.archive-ad-form {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.archive-ad-form p {
+  color: var(--ink-700);
+  margin-bottom: 10px;
+}
+
+/* ---------- Oversight grid (wages/finance full detail, File Management summary) ---------- */
+
+.oversight-grid {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.oversight-grid-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.oversight-grid-signer {
+  color: var(--ink-500);
+  flex-basis: 100%;
+}
+
+/* ---------- Employee picker (File Management: search + select) ---------- */
+
+.employee-picker-search {
+  display: flex;
+  gap: 8px;
+}
+
+.employee-picker-search input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #c8c8c8;
+  border-radius: var(--radius-sm);
+}
+
+.employee-picker-results-label {
+  margin: 12px 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.employee-picker-results {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.employee-picker-results li,
+.employee-picker-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.employee-picker-results li small,
+.employee-picker-selected small {
+  display: block;
+  color: var(--ink-500);
+}
+
+.employee-picker-empty {
+  margin-top: 10px;
+  color: var(--ink-500);
+  font-size: 0.85rem;
+}
+
+.employee-picker-add-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--green-700);
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-decoration: underline;
   cursor: pointer;
 }
 
-.checklist-panel input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--green-700);
-  transition: transform 150ms ease;
+.employee-picker-add-link:hover {
+  color: var(--green-800);
 }
 
-.checklist-panel input[type="checkbox"]:checked {
-  transform: scale(1.15);
+/* TEMPORARY dev feature -- see the comment in EmployeePicker.jsx */
+.employee-picker-add-form {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px dashed var(--gold-border);
+  border-radius: var(--radius-md);
+  background: var(--gold-100);
 }
 
-.checklist-panel .hint {
+.employee-picker-add-title {
+  margin-bottom: 12px;
+  font-weight: 700;
+  color: var(--gold-600);
+}
+
+.employee-picker-add-form .form-group {
+  margin-bottom: 0.75rem;
+}
+
+.employee-picker-add-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 6px;
-  padding-inline-start: 28px;
-  font-size: 0.75rem;
-  color: var(--rose-600);
+}
+
+/* ---------- Department analytics dashboard ---------- */
+
+.analytics-dashboard {
+  margin-bottom: 30px;
+}
+
+.analytics-dashboard-subtitle {
+  margin: -16px 0 18px;
+  color: var(--ink-500);
+  font-size: 0.82rem;
+}
+
+.dept-stat-tile--completed strong {
+  color: var(--green-700);
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.analytics-card h3 {
+  margin: 0 0 14px;
+  font-size: 0.9rem;
+  color: #1b4843;
+}
+
+.analytics-card--wide {
+  grid-column: 1 / -1;
+}
+
+.donut-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.donut-chart {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.donut-chart-center {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--card);
+  text-align: center;
+}
+
+.donut-chart-center strong {
+  font-size: 1.15rem;
+  color: var(--ink-900);
+}
+
+.donut-chart-center span {
+  font-size: 0.62rem;
+  color: var(--ink-500);
+}
+
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: var(--ink-700);
+}
+
+.donut-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.donut-legend strong {
+  color: var(--ink-900);
+}
+
+.donut-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.bar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.bar-list-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.9fr) minmax(60px, 1.6fr) 44px;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+
+.bar-list-label {
+  color: var(--ink-700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  position: relative;
+  height: 9px;
+  border-radius: 999px;
+  background: #eef4f3;
+  overflow: hidden;
+}
+
+.bar-fill {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+
+.bar-list-value {
+  font-weight: 700;
+  color: var(--ink-900);
+  text-align: end;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.activity-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.activity-list-employee {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-list-employee small {
+  color: var(--ink-500);
+}
+
+.activity-list-date {
+  color: var(--ink-500);
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .bar-list-row {
+    grid-template-columns: minmax(60px, 0.8fr) minmax(50px, 1.4fr) 38px;
+  }
+}
+
+/* ---------- File Management: expandable request rows ---------- */
+
+.request-list-expandable {
+  flex-direction: column;
+  align-items: stretch !important;
+}
+
+.request-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.request-list-row > button:first-of-type {
+  margin-inline-start: auto;
+}
+
+.request-list-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 [dir="rtl"] .header-actions {

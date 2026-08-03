@@ -1,6 +1,7 @@
 # Project Status
 
-Last updated: 2026-08-02 (show employee's own department to reviewers, by Nader + Claude).
+Last updated: 2026-08-04 (AD-deletion "final marker" + richer dashboards for
+File Management/IT/oversight, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -203,6 +204,281 @@ Update this file whenever a task moves — don't let it go stale.
       real department names borrowed from `departments.data.js` (Sara →
       Financial Affairs, Mohamed → Warehouses). Verified live in-browser in
       both languages plus the admin picker screen.
+- [x] **Full workflow revamp (2026-08-03) to match how the real paper process
+      actually works**, based on the scanned "إخلاء طرف" form and a round of
+      clarifying questions with Nader. This replaced most of the backend and
+      frontend — see `CLAUDE.md` for the full design, this is a summary of
+      what changed and why:
+      - **Employees never log in anymore.** A new `file_management` role
+        files every clearance request on the employee's behalf
+        (`POST /requests`, after searching a new `Employee` mock-AD directory
+        — `backend/src/models/Employee.js` — by number/name). The old
+        `employee` role, `EmployeeDashboard.jsx`, and `GET /requests/mine`
+        are gone.
+      - **The real 13 departments and paper-form order replaced the old
+        guessed 13** (`backend/src/seed/departments.data.js`) — e.g. IT is
+        now #10, not last-by-convention; Wages (#12) and Financial Affairs
+        (#13) are the real last two.
+      - **Sequential-for-everyone locking became tier-based.** Departments
+        1-11 (including IT) sign in parallel now; only Wages/Finance
+        (`Department.tier: 2`) are gated behind all of 1-11. This replaced
+        the 2026-08-02 "strictly in order" design entirely --
+        `isDepartmentUnlocked()` in `request.routes.js` now checks tiers, not
+        a full snapshot-order chain.
+      - **Checkbox checklists became re-auth + evidence-upload signatures.**
+        12 of 13 departments have no checklist at all anymore -- any one of
+        that department's 2+ reviewer accounts signs once
+        (`POST .../departments/:deptKey/sign`: re-enter your password +
+        upload a photo/PDF of the physical signature/stamp, via `multer`).
+        Only IT keeps itemized requirements, now 5 items (mobile+data lines,
+        phone, PC/account/mailbox, SAP service, SAP account removal) instead
+        of the old 9, each permanently owned by one of IT's 5 reviewer
+        accounts (`User.assignedItemKey`). The old `finalize` and `reject`
+        routes/UI are gone entirely -- no more "confirm" button, no more
+        rejection/hold flow.
+      - **Visibility is now enforced server-side, not just cosmetic.** A
+        plain reviewer's API responses are redacted to their own department
+        only (`redactToOwnDepartment()`); Wages/Finance reviewers get full
+        per-department detail (`canSeeFull()`, driven by
+        `Department.hasOversightDashboard`, never a hardcoded department
+        key); File Management gets neither -- only a high-level status
+        summary of requests they filed (`summarizeForFileManagement()`, no
+        signer identity or evidence).
+      - **"Delete from Active Directory" is now a manual capstone action**
+        (`POST /:id/archive-ad`), shown on IT's dashboard only once ALL 13
+        departments have signed -- independent of IT's position in the order.
+        Flips `archivedFromAD` on the new `Employee` record (not `User`,
+        since employees no longer have login records at all).
+      - **New: composited signed PDF.** `backend/src/services/clearancePdf.js`
+        (pdf-lib) overlays each department's uploaded evidence photo onto its
+        row of `backend/assets/clearance-form-template.pdf` (the actual
+        scanned form, hand-calibrated row coordinates). Downloadable via
+        `GET /requests/:id/pdf` -- a live preview for oversight reviewers,
+        the final artifact for File Management once a request is `completed`.
+      - **Hardening found along the way:** Express 4 doesn't catch errors
+        thrown inside async route handlers -- an uncaught one (hit live, via
+        a corrupt test image crashing `pdf-lib`'s `embedPng`) becomes an
+        unhandled promise rejection and kills the whole Node process, not
+        just that request. Added `backend/src/utils/asyncHandler.js` and
+        wrapped every async route handler with it, plus a try/catch around
+        image embedding in `clearancePdf.js` so a bad upload just skips that
+        row instead of taking down PDF generation. This was a latent risk in
+        the original code too, just much more likely to trigger once file
+        uploads and image parsing were introduced.
+      - No more `admin` role -- nothing needed a true super-admin once File
+        Management and oversight reviewers cover request creation and
+        cross-department visibility. Account provisioning (which department
+        a reviewer belongs to, which item an IT reviewer owns) stays
+        seed-data-only, same mock-AD philosophy as before.
+      - Verified end to end: rewrote `backend/scripts/smoke-test.js` to cover
+        tier locking, single vs. itemized signing (including the
+        wrong-reviewer-signs-wrong-item 403 case), the visibility redaction
+        (a plain reviewer's response has exactly one department, no signer
+        fields in File Management's view), AD deletion (and the
+        can't-do-it-twice 409), and PDF access rules -- all passing against
+        the shared Atlas cluster. Frontend production build (`npm run build`)
+        also verified clean.
+- [x] **Follow-up fixes after trying the revamp for real (2026-08-03):**
+      - **Plain reviewers now get an actual dashboard, not a bare queue.**
+        `GET /requests` for a non-oversight reviewer used to only return
+        currently-pending items; it now returns every request ever unlocked
+        for their department (pending AND already-signed), tagged with a
+        `needsAction` flag (`isPendingForReviewer()` + a tier-unlock check,
+        computed server-side so the frontend doesn't re-derive it).
+        `ReviewerDashboard.jsx` shows stat tiles ("waiting on you" / "already
+        signed") and buckets the list into two sections instead of one flat
+        list with just an employee name. Same data now backs oversight
+        reviewers' full-list view too (`withOwnDepartmentAnnotated()`).
+      - **Fixed a real row-alignment bug in the composited PDF.** The
+        per-row coordinates in `clearancePdf.js` were each hand-eyeballed
+        independently and drifted about half a row off by row 13 (Financial
+        Affairs' signature was landing in Wages' row). Re-derived from just
+        the table's top edge + one row height instead — verified by
+        overlaying debug rectangles on the actual scan at 300dpi and
+        checking alignment at the top, middle, and bottom of the table.
+      - **Signature evidence photos no longer composite as an opaque white
+        box.** A real photo of a signature on paper has a white/off-white
+        background; embedding it as-is stamped a visible rectangle over the
+        printed form. Evidence is now decoded to raw pixels (new deps
+        `pngjs`/`jpeg-js`) and near-white pixels are made transparent
+        (soft-edged near the threshold, not a hard cutout) before embedding,
+        regardless of upload format.
+      - **Added a temporary dev-only "add employee" + "browse all
+        employees" affordance** to `EmployeePicker.jsx` /
+        `POST api/employees` / `GET /api/employees/search` (empty query now
+        returns the whole directory instead of nothing) so testing doesn't
+        require hand-editing `employees.data.js` and re-running the seed
+        script. Clearly flagged for deletion once real AD/accounts exist,
+        same as `demoAccounts.js`.
+      - Also fixed two smaller bugs caught by actually driving the app in a
+        browser: a `<form>` nested inside another `<form>` in
+        `EmployeePicker.jsx` (invalid HTML), and `ReviewerDashboard.jsx`
+        missing a loading state (briefly showed "no pending requests" before
+        the real fetch resolved).
+- [x] **Second round of follow-up fixes + department dashboards (2026-08-03):**
+      - **Renamed `username` to `userID` everywhere** (mock-AD `User.userID`,
+        JWT payload, login body/response, `createdByUserID`/
+        `signedByUserID`/`archivedByUserID` on `ClearanceRequest`, login page
+        copy in both languages). Required dropping the old MongoDB
+        `username_1` unique index by hand (`User.syncIndexes()`) since
+        Mongoose doesn't retire stale indexes from a field rename on its own
+        — anyone pulling this change onto an existing local DB needs to run
+        that once too, or just `npm run seed` against a fresh collection.
+      - **Confirmed every non-IT department already has 2 reviewer seed
+        accounts** (`users.data.js` was already correct here — no change
+        needed).
+      - **The composited PDF's name column now shows who signed, not who's
+        being cleared.** `clearancePdf.js` was drawing
+        `request.employeeFullName` on every row; it now draws that row's
+        `signedByFullName` (or, for IT, the most recently-signed item's
+        signer) — matches the paper form's "الاسم" column, which is a
+        signer-name column, not a repeat of the employee's identity.
+      - **The IT "Delete from Active Directory" button was reported missing.**
+        Root-caused via a full re-auth + curl + live-browser walkthrough: the
+        button's gating (`request.status === "completed"`, i.e. all 13
+        departments including Wages/Finance) was already correct — the
+        original report traced back to signing Wages/Finance before IT had
+        actually finished all 5 items, which the tier lock correctly
+        rejected. No code change was needed here; verified live in-browser
+        that the button appears the moment the 13th department signs.
+      - **The seeded demo request (#10567, Mohamed Farouk) now has real
+        signature images**, not just a `status: "completed"` flag with no
+        evidence. `seed.js` copies one of 3 sample signature PNGs
+        (`backend/assets/dummy-signatures/`, copied from
+        `frontend/src/assets/dummy-signature-*.png`) at random into each
+        signed department's upload folder, and signs as that department's
+        actual `reviewer1` seed account (not a synthetic `"seed-script"`
+        identity) so both the dashboard and the composited PDF look like a
+        real in-progress clearance.
+      - **New: per-department analytics dashboard**
+        (`frontend/src/components/DepartmentDashboard.jsx`), shown at the
+        top of every reviewer's dashboard, computed entirely client-side from
+        data `GET /requests` already returns (no new backend endpoints).
+        Three flavors, all respecting the existing need-to-know visibility
+        rule:
+        - Plain tier-1 reviewers (and IT): stats scoped to requests that
+          reached *their own* department only — total/pending/signed counts,
+          avg. time-to-sign, reason-for-leaving breakdown, a 6-month trend,
+          and recent activity. IT additionally gets a per-checklist-item
+          completion breakdown (which of the 5 items tends to lag).
+        - Wages/Finance (oversight): the same shape but aggregated across all
+          13 departments and every request, plus department workload
+          (pending count per department) and department performance
+          (completion % per department) bars — matches their existing
+          full-visibility `canSeeFull()` access, nothing new exposed.
+        - Charts are plain CSS (conic-gradient donut, flexbox bar lists) —
+          no new charting dependency.
+      - Verified everything above live: reseeded, ran
+        `backend/scripts/smoke-test.js` (still green), and drove the actual
+        app with a headless browser (Playwright, installed temporarily as a
+        frontend devDependency and removed afterward) through File
+        Management → security reviewer → wages oversight → IT itemized
+        signing → Delete-from-AD → composited PDF download, screenshotting
+        each step.
+- [x] **AD-deletion "final marker" + richer dashboards (2026-08-04):**
+      - **A distinct "Deleted from AD" badge** (`.badge.archived`, new indigo
+        color so it doesn't collide with the pending/completed palette) now
+        shows wherever `request.archivedFromAD` is true: IT's own request
+        list and recent-activity rows, and — new — `RequestOversightGrid`
+        (shared by File Management's expanded row detail and the oversight
+        full grid) gets a banner above the department list
+        ("✓ this employee has been deleted from Active Directory · date").
+        File Management's list row also gets the short badge next to the
+        status pill. No backend change needed — `archivedFromAD` was already
+        present on every response shape, just not surfaced in the UI.
+      - **`DepartmentDashboard.jsx` gained more KPIs and a new chart, and
+        File Management now gets the dashboard too** (previously only
+        reviewers did): an "Overdue (7+ days)" tile (pending longer than a
+        week) on every dashboard flavor; a "Deleted from AD" count tile on
+        IT's, oversight's, and File Management's; and a new
+        "Requests by employee's department" bar chart (grouping by
+        `employeeDepartment_ar/en` — the employee's real EGAS department,
+        not one of the 13 signing departments) on every flavor, closest
+        analog to the reference screenshots' "Requests by Department" donut.
+        File Management now renders the same company-wide dashboard
+        oversight reviewers get (`computeCompanyStats`, reused as-is — their
+        summarized request shape already carries everything that function
+        needs: per-department `status`, `reason`, `createdAt`,
+        `archivedFromAD`).
+      - **Demo request re-shaped**: employee #10567 (Mohamed Farouk) now has
+        all 11 tier-1 departments *including IT* fully signed (5/5 itemized
+        items, each by its real owning reviewer) — only Wages and Finance
+        (the paper form's last two rows) are left, so the demo goes straight
+        to "unlock tier 2 → sign the last two → delete from AD" instead of
+        needing to click through IT's 5 items live first.
+      - Verified live: reseeded, smoke test green, and a full headless
+        browser pass (Playwright, temporary devDependency again) — signed
+        Wages then Finance as those reviewers, deleted from AD as IT, then
+        confirmed the badge/marker renders correctly on IT's list, IT's
+        dashboard KPI, File Management's list row, and File Management's
+        expanded detail banner.
+      - New demo employee **#10932 (Khaled Mostafa)**: all 13 departments
+        already signed, nothing left but IT's "Delete from Active Directory"
+        step. Refactored the seed script's request-building logic into a
+        shared `buildDepartments()` helper (parameterized by which
+        tiers/IT are pre-signed) instead of duplicating it per demo request.
+- [x] **General rule: "fully signed" and "cleared" are different things
+      (2026-08-04).** Every one of the 13 departments signing off used to be
+      enough for `request.status` to read `"completed"` — Nader's call: it
+      shouldn't. An employee isn't actually cleared until IT deletes them
+      from Active Directory; that's the real final step, not a formality
+      tacked on afterward. `computeOverallStatus()` in `request.routes.js`
+      now requires BOTH `allDepartmentsSigned()` (new helper, factored out of
+      the old check) AND `archivedFromAD === true`. Concretely: the two sign
+      routes can now only ever recompute `status` back to `"in_progress"`;
+      `POST /:id/archive-ad` became the ONLY route that can set it to
+      `"completed"` (and now also sets `completedAt`, moved there from the
+      sign routes). `archive-ad`'s own precondition flipped from
+      `status === "completed"` to `allDepartmentsSigned()` — the old check
+      would've been circular, since status could never reach `"completed"`
+      any other way once this rule was in place.
+      - **New problem this created**: IT's "Delete from Active Directory"
+        button was gated on `status === "completed"` client-side — under the
+        new rule that's now unreachable (chicken-and-egg). Fixed by adding a
+        `readyForAdDeletion` boolean (`allDepartmentsSigned()` computed from
+        the FULL departments array before it gets redacted down to just the
+        reviewer's own entry) to every reviewer-facing response shape
+        (`redactToOwnDepartment()`, `withOwnDepartmentAnnotated()`) — lets
+        IT know "every department is done, you can delete now" without
+        needing visibility into which specific other departments finished,
+        preserving the existing need-to-know redaction. `ReviewerDashboard.jsx`
+        now gates `ArchiveAdForm` on `selected.readyForAdDeletion`, not
+        `selected.status`.
+      - Fixed the #10932 (Khaled Mostafa) seed request from the entry above,
+        which had been created with `status: "completed"` hardcoded — under
+        the new rule that's wrong until AD deletion actually happens; removed
+        the override so it now correctly shows `"in_progress"` with
+        `readyForAdDeletion: true` until IT acts on it.
+      - Updated `backend/scripts/smoke-test.js`: asserts `"in_progress"` (not
+        `"completed"`) right after all 13 sign, that File Management's PDF
+        download 403s at that point, that IT's view carries
+        `readyForAdDeletion: true` without extra department detail, and that
+        `status` only flips to `"completed"` in archive-ad's own response.
+        All green.
+- [x] **Made the "waiting on AD deletion" state visually obvious (2026-08-04).**
+      The rule above made a real UX gap: a fully-signed request just read as
+      generic "in progress" everywhere -- File Management's list badge, the
+      oversight/File-Management detail grid, and even IT's own row inside
+      that grid (which just said "Cleared" once its 5 items were signed,
+      with zero hint anything else was needed). Fixed by exposing
+      `readyForAdDeletion` on `summarizeForFileManagement()` too (it already
+      existed for reviewers), then surfacing it in three places:
+      - File Management's list row now shows a distinct gold
+        "Awaiting AD deletion" badge instead of the generic "In progress"
+        pill once every department has signed (a request still genuinely
+        waiting on some department keeps the plain pill).
+      - `RequestOversightGrid.jsx` (shared by File Management's expanded row
+        and the oversight full grid) now shows a gold banner above the
+        department list in that state: "Every department has signed --
+        waiting on IT to delete this employee from Active Directory."
+      - The IT row inside that same grid gets a small note under its
+        "Cleared" badge: "Signed -- Active Directory deletion still
+        pending" -- so it doesn't read as a dead end.
+      Verified live in-browser (Playwright, temporary devDependency again):
+      Khaled Mostafa's (#10932) request shows the new badge/banner/note in
+      File Management's list and expanded view, and correctly does NOT show
+      them for Mohamed Farouk's (#10567) request, which is still genuinely
+      waiting on Wages/Finance, not IT.
 
 ## Team update
 
@@ -223,35 +499,43 @@ that was fixed.
 
 ## Blocked / needs real-world input (not solvable by writing more code)
 
-- [ ] **Real checklist requirements for 12 of 13 departments.** Only IT's
-      checklist is real. Someone needs to talk to each department (or find
-      existing documentation) and get their actual requirements. Until then,
-      every non-IT department uses a single generic placeholder item so the
-      workflow is demoable but not accurate.
-- [ ] **Whether non-IT departments need internal ordering/approval chains.**
-      The brief says this wasn't confirmed (e.g. "manager checks it, then a
-      second manager checks it"). Current schema supports per-item ordering
-      already (`checklistItems[].order`), so a sequential chain WITHIN a
-      department is easy to add once confirmed — but a "manager approves
-      after staff" step (two different people signing off on the SAME item)
-      is a different schema shape and hasn't been designed.
-- [ ] **Real Active Directory / LDAP access.** Currently 100% mocked. Nobody
-      on the team has real EGAS LDAP credentials yet (per the July 31 kickoff
-      conversation). See `CLAUDE.md` "mock Active Directory" for exactly what
-      changes when this becomes available.
+- [x] ~~Real checklist requirements for 12 of 13 departments.~~ Resolved by
+      the 2026-08-03 redesign, not by gathering requirements: 12 of 13
+      departments no longer have a checklist at all -- any one of a
+      department's 2+ reviewers signing (password re-auth + evidence photo)
+      IS the requirement now, matching the one-signature-per-row paper form.
+      Only IT still has itemized requirements (5 items, real and confirmed).
+- [ ] **Whether departments need a "manager approves after staff" step.**
+      Still open. Right now any one of a department's 2+ reviewer accounts
+      signing completes it -- there's no concept of a second person
+      double-checking. If EGAS wants that, it's a new schema shape (the
+      current itemized mode assigns one item to one fixed reviewer, which
+      isn't the same as "two people must both sign the same thing") and
+      hasn't been designed.
+- [ ] **Real Active Directory / LDAP access.** Currently 100% mocked --
+      both staff logins (`User`) and the employee directory (`Employee`).
+      Nobody on the team has real EGAS LDAP credentials yet (per the July 31
+      kickoff conversation). See `CLAUDE.md` "mock Active Directory" for
+      exactly what changes when this becomes available.
 - [ ] **"Temporary database" design for post-AD-deletion employees.** The
       brief explicitly flags this as a later design decision. Current stopgap:
-      flip `archivedFromAD: true` on the same Mongo record instead of actually
-      deleting it, so login still works. Needs a real design pass once the
-      team has bandwidth — is this still the right approach for production,
-      or does EGAS actually want the record physically separated?
+      flip `archivedFromAD: true` on the `Employee` record instead of actually
+      deleting it. Needs a real design pass once the team has bandwidth.
 - [ ] **Hosting/deployment target.** Not yet decided — local dev only so far.
+- [ ] **PDF row coordinates are hand-calibrated against one scanned copy**
+      of the paper form (`backend/assets/clearance-form-template.pdf`). If
+      EGAS provides a cleaner/blank source scan, `backend/src/services/clearancePdf.js`
+      needs its `ROWS`/`COLUMNS` constants re-tuned against it (instructions
+      in that file's header comment).
 
 ## Open questions for Nader to raise with whoever assigned this project
 
-- Can any of the 15 non-IT departments' real requirements be gathered before
-  the next milestone, even informally (a phone call, an old paper form)?
 - Is there a real AD/LDAP test environment the team could get read-only access
-  to, even a sandboxed one?
+  to, even a sandboxed one? (Now needed for both staff accounts AND the
+  employee directory.)
 - Who ends up owning the "manager vs. staff sign-off" question — is that
   actually part of scope, or out of scope for v1?
+- Is 2 reviewer accounts per department (so either can sign) actually enough
+  coverage in practice, or do some departments need more?
+- Should a PDF upload (not just a photo) actually get embedded in the
+  composited form eventually, or is the text placeholder fine long-term?

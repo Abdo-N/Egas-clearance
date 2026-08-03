@@ -1,41 +1,176 @@
 const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
+const bcrypt = require("bcryptjs");
 const Department = require("../models/Department");
-const ClearanceRequest = require("../models/ClearanceRequest");
+const Employee = require("../models/Employee");
 const User = require("../models/User");
-const { requireAuth, requireRole } = require("../middleware/auth.middleware");
+const ClearanceRequest = require("../models/ClearanceRequest");
+const { requireAuth, requireRole, requireOwnDepartment } = require("../middleware/auth.middleware");
+const { generateClearancePdf } = require("../services/clearancePdf");
+const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
 
-// A single rejected department blocks the whole request regardless of how
-// far along everyone else is; otherwise it's "completed" only once every
-// department is, same as before rejection existed.
-function computeOverallStatus(departments) {
-  if (departments.some((d) => d.status === "rejected")) return "rejected";
-  if (departments.every((d) => d.status === "completed")) return "completed";
-  return "in_progress";
+const UPLOAD_ROOT = path.resolve(__dirname, "../../uploads");
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(UPLOAD_ROOT, req.params.id);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const label = req.params.itemKey || req.params.deptKey;
+    const ext = path.extname(file.originalname) || "";
+    cb(null, `${label}-${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error("Evidence must be a JPG/PNG/WEBP photo or a PDF"));
+    }
+    cb(null, true);
+  },
+});
+
+// Every one of the 13 departments has signed -- necessary, but NOT
+// sufficient, for the request to count as "completed" (see
+// computeOverallStatus below). This is its own helper because it also gates
+// archive-ad and is exposed to reviewers as `readyForAdDeletion` so IT knows
+// when the delete-from-AD action becomes available without needing
+// visibility into every other department's status.
+function allDepartmentsSigned(departments) {
+  return departments.every((d) => d.status === "completed");
 }
 
-// Departments are snapshotted onto the request in Department.order at
-// submission time (see POST / below), so array position IS the processing
-// order for that request from then on. A department only becomes visible/
-// actionable once every department before it in that order has fully
-// completed -- the first department has nothing before it, so it's always
-// unlocked. This is what makes IT "go last" (it's simply last in the array)
-// without ever hardcoding "it" here.
+// General rule: an employee is never actually "cleared" just because every
+// department signed off -- IT deleting them from Active Directory is the
+// real final step, not a formality after the fact. `status` only becomes
+// "completed" once BOTH are true; until then (even with all 13 departments
+// showing "completed") it stays "in_progress". No more "rejected" state now
+// that reject/hold has been dropped entirely.
+function computeOverallStatus(departments, archivedFromAD) {
+  return allDepartmentsSigned(departments) && archivedFromAD ? "completed" : "in_progress";
+}
+
+// Tier-based locking (replaces the old full-chain order lock): a department
+// is unlocked once every department with a LOWER tier has completed. Tier-1
+// departments (1-11) have nothing below them, so they're always unlocked and
+// sign in parallel; tier-2 (wages, finance) waits on all of tier 1. This is
+// the one place the rule lives -- add more tiers later without touching
+// anything else.
 function isDepartmentUnlocked(departments, deptKey) {
-  const idx = departments.findIndex((d) => d.departmentKey === deptKey);
-  if (idx <= 0) return true;
-  return departments.slice(0, idx).every((d) => d.status === "completed");
+  const dept = departments.find((d) => d.departmentKey === deptKey);
+  if (!dept) return false;
+  return departments.filter((d) => d.tier < dept.tier).every((d) => d.status === "completed");
+}
+
+// Only wages/finance (hasOversightDashboard, embedded in the JWT at login
+// so this never hardcodes department keys) get full per-department detail
+// -- who signed, when, and the uploaded evidence. File Management does NOT
+// get this: they file requests and get a high-level progress view of their
+// own submissions only, never signer identity or evidence.
+function canSeeFull(user) {
+  return user.role === "reviewer" && user.hasOversightDashboard === true;
+}
+
+// Whichever single department entry belongs to THIS reviewer, matching the
+// visibility rule: departments 1-11 (incl. IT) only ever see their own
+// slice of a request, never what other departments have signed. Also tags
+// that entry with `needsAction` so the reviewer's dashboard can show "waiting
+// on you" vs "already signed" without re-deriving the rule client-side.
+function redactToOwnDepartment(request, user) {
+  const obj = request.toObject ? request.toObject() : request;
+  // Computed from the full (pre-redaction) departments array -- a single
+  // yes/no flag doesn't leak which specific other departments are done, so
+  // it's safe to hand to any reviewer, but it's what IT's UI needs to know
+  // when the delete-from-AD action becomes available.
+  const readyForAdDeletion = allDepartmentsSigned(obj.departments);
+  const own = obj.departments.find((d) => d.departmentKey === user.departmentKey);
+  if (!own) return { ...obj, departments: [], readyForAdDeletion };
+  // Locked-but-still-"pending" must NOT read as needsAction=true -- matters
+  // for oversight reviewers (see withOwnDepartmentAnnotated below), who see
+  // every request including ones where their own tier-2 department hasn't
+  // unlocked yet.
+  const needsAction = isDepartmentUnlocked(obj.departments, user.departmentKey) && isPendingForReviewer(own, user);
+  return { ...obj, departments: [{ ...own, needsAction }], readyForAdDeletion };
+}
+
+// Same `needsAction` tag as redactToOwnDepartment, but for oversight
+// reviewers who get the full (un-redacted) departments array -- only their
+// own entry is annotated, since "needs action" is meaningless for a
+// department that isn't theirs.
+function withOwnDepartmentAnnotated(request, user) {
+  const obj = request.toObject ? request.toObject() : request;
+  return {
+    ...obj,
+    readyForAdDeletion: allDepartmentsSigned(obj.departments),
+    departments: obj.departments.map((d) => {
+      if (d.departmentKey !== user.departmentKey) return d;
+      const needsAction = isDepartmentUnlocked(obj.departments, user.departmentKey) && isPendingForReviewer(d, user);
+      return { ...d, needsAction };
+    }),
+  };
+}
+
+// File Management's "high view": which of the 13 departments are done vs
+// still pending, with no signer identity, timestamps, or evidence -- just
+// enough to track where a request they filed is stuck.
+function summarizeForFileManagement(request) {
+  const obj = request.toObject ? request.toObject() : request;
+  return {
+    ...obj,
+    // Lets File Management's UI distinguish "still waiting on some
+    // department" from "every department signed, now just waiting on IT to
+    // delete from AD" -- both currently read as the same "in_progress"
+    // status otherwise, which is exactly what made this confusing.
+    readyForAdDeletion: allDepartmentsSigned(obj.departments),
+    departments: obj.departments.map((d) => ({
+      departmentKey: d.departmentKey,
+      name_ar: d.name_ar,
+      name_en: d.name_en,
+      order: d.order,
+      tier: d.tier,
+      status: d.status,
+    })),
+  };
+}
+
+// For itemized (IT) departments, "actionable for me" means MY specific item
+// is still unsigned -- not the department as a whole, since teammates might
+// have already finished theirs.
+function isPendingForReviewer(dept, user) {
+  if (dept.signatureMode === "itemized") {
+    const item = dept.items.find((i) => i.key === user.assignedItemKey);
+    return item ? item.status === "pending" : false;
+  }
+  return dept.status === "pending";
+}
+
+async function verifyPassword(userID, password) {
+  const user = await User.findOne({ userID });
+  if (!user) return false;
+  return bcrypt.compare(password, user.passwordHash);
 }
 
 /**
- * EMPLOYEE: submit a new clearance request.
- * Snapshots every department's current checklist template onto the
- * request so future template edits don't retroactively change
- * requests already in progress.
+ * FILE MANAGEMENT: file a new clearance request on behalf of an employee
+ * looked up from the (seed-only, mock-AD-stand-in) Employee directory.
+ * Snapshots every department's current template onto the request so later
+ * template edits don't retroactively change requests already in flight.
  */
-router.post("/", requireAuth, requireRole("employee"), async (req, res) => {
-  const { reason, lastWorkingDay } = req.body;
+router.post("/", requireAuth, requireRole("file_management"), asyncHandler(async (req, res) => {
+  const { employeeNumber, reason, lastWorkingDay } = req.body;
+  if (!employeeNumber || !employeeNumber.trim()) {
+    return res.status(400).json({ error: "'employeeNumber' is required" });
+  }
   if (!ClearanceRequest.LEAVING_REASONS.includes(reason)) {
     return res.status(400).json({
       error: `'reason' must be one of: ${ClearanceRequest.LEAVING_REASONS.join(", ")}`,
@@ -52,12 +187,17 @@ router.post("/", requireAuth, requireRole("employee"), async (req, res) => {
     return res.status(400).json({ error: "'lastWorkingDay' cannot be in the past" });
   }
 
+  const employee = await Employee.findOne({ employeeNumber: employeeNumber.trim() });
+  if (!employee) {
+    return res.status(404).json({ error: "No employee found with that employee number" });
+  }
+
   const existing = await ClearanceRequest.findOne({
-    employeeUsername: req.user.username,
+    employeeNumber: employee.employeeNumber,
     status: "in_progress",
   });
   if (existing) {
-    return res.status(409).json({ error: "You already have a clearance request in progress" });
+    return res.status(409).json({ error: "This employee already has a clearance request in progress" });
   }
 
   const departments = await Department.find().sort({ order: 1 });
@@ -66,254 +206,171 @@ router.post("/", requireAuth, requireRole("employee"), async (req, res) => {
   }
 
   const request = await ClearanceRequest.create({
-    employeeUsername: req.user.username,
-    employeeFullName: req.user.fullName,
-    employeeDepartment_ar: req.user.employeeMeta?.department_ar || "",
-    employeeDepartment_en: req.user.employeeMeta?.department_en || "",
+    employeeNumber: employee.employeeNumber,
+    employeeFullName: employee.fullName,
+    employeeJobTitle: employee.jobTitle,
+    employeeDepartment_ar: employee.department_ar,
+    employeeDepartment_en: employee.department_en,
     reason,
     lastWorkingDay: parsedLastWorkingDay,
+    createdByUserID: req.user.userID,
     departments: departments.map((d) => ({
       departmentKey: d.key,
       name_ar: d.name_ar,
       name_en: d.name_en,
-      isFinal: d.isFinal,
+      order: d.order,
+      tier: d.tier,
+      hasOversightDashboard: d.hasOversightDashboard,
+      signatureMode: d.signatureMode,
       status: "pending",
-      items: d.checklistItems
-        .sort((a, b) => a.order - b.order)
-        .map((i) => ({
-          key: i.key,
-          label_ar: i.label_ar,
-          label_en: i.label_en,
-          order: i.order,
-          checked: false,
-          checkedBy: null,
-          checkedAt: null,
-        })),
+      items:
+        d.signatureMode === "itemized"
+          ? d.checklistItems.map((i) => ({
+              key: i.key,
+              label_ar: i.label_ar,
+              label_en: i.label_en,
+              assignedItemKey: i.key,
+              status: "pending",
+            }))
+          : [],
     })),
   });
 
   res.status(201).json(request);
-});
-
-// EMPLOYEE: view my own latest request.
-router.get("/mine", requireAuth, requireRole("employee"), async (req, res) => {
-  const request = await ClearanceRequest.findOne({ employeeUsername: req.user.username }).sort({
-    createdAt: -1,
-  });
-  res.json(request || null);
-});
+}));
 
 /**
- * REVIEWER: list requests that still need action from MY department.
- * ADMIN: list every request (admin sees everything regardless of lock state).
+ * Oversight (wages, finance) reviewers: every request, full per-department
+ * detail. File Management: only requests THEY filed, high-level progress
+ * only (no signer identity/evidence). Every other reviewer: every request
+ * that's ever been unlocked for their department -- both still waiting on
+ * them (`needsAction: true`) and already signed -- redacted to that one
+ * department. This is what backs each reviewer's dashboard (not just a
+ * to-do queue): they can see their own department's full history, not only
+ * what's currently pending.
  */
-router.get("/", requireAuth, requireRole("reviewer", "admin"), async (req, res) => {
-  if (req.user.role === "admin") {
+router.get("/", requireAuth, requireRole("file_management", "reviewer"), asyncHandler(async (req, res) => {
+  if (canSeeFull(req.user)) {
     const all = await ClearanceRequest.find().sort({ createdAt: -1 });
-    return res.json(all);
+    return res.json(all.map((r) => withOwnDepartmentAnnotated(r, req.user)));
+  }
+
+  if (req.user.role === "file_management") {
+    const mine = await ClearanceRequest.find({ createdByUserID: req.user.userID }).sort({ createdAt: -1 });
+    return res.json(mine.map(summarizeForFileManagement));
   }
 
   const mine = await ClearanceRequest.find({
-    departments: {
-      // "rejected" stays in the queue too, so the reviewer can clear it later.
-      $elemMatch: { departmentKey: req.user.departmentKey, status: { $in: ["pending", "rejected"] } },
-    },
-  }).sort({ createdAt: 1 });
+    "departments.departmentKey": req.user.departmentKey,
+  }).sort({ createdAt: -1 });
 
-  // Only show it once every department before ours (in submission order)
-  // has completed -- see isDepartmentUnlocked.
-  const unlocked = mine.filter((r) => isDepartmentUnlocked(r.departments, req.user.departmentKey));
-  res.json(unlocked);
-});
+  const visible = mine.filter((r) => {
+    const dept = r.departments.find((d) => d.departmentKey === req.user.departmentKey);
+    return Boolean(dept) && isDepartmentUnlocked(r.departments, req.user.departmentKey);
+  });
 
-// Anyone involved in the request can fetch its detail (employee owner,
-// reviewer with a matching department entry, or admin).
-router.get("/:id", requireAuth, async (req, res) => {
+  res.json(visible.map((r) => redactToOwnDepartment(r, req.user)));
+}));
+
+// Same visibility split as the list route, but doesn't require the
+// department to still be pending -- a reviewer can reopen a request to see
+// what they already signed.
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const request = await ClearanceRequest.findById(req.params.id);
   if (!request) return res.status(404).json({ error: "Not found" });
 
-  const isOwner = request.employeeUsername === req.user.username;
-  const isReviewerForThis =
-    req.user.role === "reviewer" &&
-    request.departments.some((d) => d.departmentKey === req.user.departmentKey) &&
-    isDepartmentUnlocked(request.departments, req.user.departmentKey);
-  const isAdmin = req.user.role === "admin";
+  if (canSeeFull(req.user)) return res.json(withOwnDepartmentAnnotated(request, req.user));
 
-  if (!isOwner && !isReviewerForThis && !isAdmin) {
+  if (req.user.role === "file_management") {
+    if (request.createdByUserID !== req.user.userID) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    return res.json(summarizeForFileManagement(request));
+  }
+
+  if (req.user.role !== "reviewer") return res.status(403).json({ error: "Forbidden" });
+
+  const dept = request.departments.find((d) => d.departmentKey === req.user.departmentKey);
+  if (!dept || !isDepartmentUnlocked(request.departments, req.user.departmentKey)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  res.json(request);
-});
+  res.json(redactToOwnDepartment(request, req.user));
+}));
 
 /**
- * REVIEWER (or admin): check off one checklist item for their department.
- *
- * Enforces two rules baked in from the paper process:
- *   1. A department is locked until every department before it in the
- *      request's department order has fully completed (isDepartmentUnlocked
- *      above). This is what makes IT "go last" -- it's simply last in the
- *      order -- without ever hardcoding "IT" anywhere.
- *   2. Items within an unlocked department must still be checked in order
- *      (matches the IT department's required sequence: Phone -> PC -> ... ->
- *      AD deletion).
+ * REVIEWER: sign off a single-signature department -- re-enter your own
+ * password (re-authentication, same logged-in identity) and upload a photo
+ * or PDF of the physical signature/stamp, fresh for this request. Any one
+ * of the department's 2+ reviewers signing is enough.
  */
-router.patch(
-  "/:id/departments/:deptKey/items/:itemKey",
+router.post(
+  "/:id/departments/:deptKey/sign",
   requireAuth,
-  requireRole("reviewer", "admin"),
-  async (req, res) => {
-    const { checked } = req.body;
-    if (typeof checked !== "boolean") {
-      return res.status(400).json({ error: "'checked' boolean is required" });
-    }
+  requireRole("reviewer"),
+  requireOwnDepartment,
+  upload.single("evidence"),
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "'password' is required to sign" });
+    if (!req.file) return res.status(400).json({ error: "A signature photo or PDF is required to sign" });
 
     const request = await ClearanceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ error: "Not found" });
 
     const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
     if (!dept) return res.status(404).json({ error: "Department not on this request" });
-
-    if (req.user.role === "reviewer" && req.user.departmentKey !== dept.departmentKey) {
-      return res.status(403).json({ error: "You can only check off your own department" });
+    if (dept.signatureMode !== "single") {
+      return res.status(400).json({ error: "This department uses itemized signing, not single signing" });
     }
-
-    if (dept.status === "rejected") {
-      return res.status(409).json({
-        error: "This department's clearance was rejected. Clear the rejection before updating checklist items.",
-      });
-    }
-
     if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
-      return res.status(409).json({
-        error: "Every department before this one must complete their clearance first",
-      });
+      return res.status(409).json({ error: "This department is still locked behind an earlier tier" });
     }
-
-    const sortedItems = [...dept.items].sort((a, b) => a.order - b.order);
-    const item = sortedItems.find((i) => i.key === req.params.itemKey);
-    if (!item) return res.status(404).json({ error: "Item not found" });
-
-    if (checked) {
-      const itemIndex = sortedItems.findIndex((i) => i.key === req.params.itemKey);
-      const priorUnchecked = sortedItems.slice(0, itemIndex).some((i) => !i.checked);
-      if (priorUnchecked) {
-        return res.status(400).json({ error: "Previous items in this department must be checked first" });
-      }
-    }
-
-    // Mutate the real (unsorted) subdocument, not the sorted copy.
-    const realItem = dept.items.find((i) => i.key === req.params.itemKey);
-    realItem.checked = checked;
-    realItem.checkedBy = checked ? req.user.username : null;
-    realItem.checkedAt = checked ? new Date() : null;
-
-    // Checking every box no longer auto-completes the department -- that now
-    // requires the explicit PATCH .../finalize action below (the "confirm"
-    // button), matching a real signature rather than an implicit side
-    // effect. Unchecking an item on an already-completed department DOES
-    // reopen it back to "pending", though, since a completed department
-    // should never have an unchecked item.
-    const allChecked = dept.items.every((i) => i.checked);
-    if (!allChecked) {
-      dept.status = "pending";
-      dept.completedAt = null;
-    }
-
-    request.status = computeOverallStatus(request.departments);
-    request.completedAt = request.status === "completed" ? new Date() : null;
-
-    await request.save();
-    res.json(request);
-  }
-);
-
-/**
- * REVIEWER (or admin): finalize (confirm) a department once every item on
- * its checklist is checked. This is the actual "sign-off" -- matches a
- * physical signature on the paper form -- and is the only way a department's
- * status becomes "completed". If this was the last department needed, the
- * employee is now fully cleared, so we also flip their mock-AD record here
- * (see User.archivedFromAD).
- */
-router.patch(
-  "/:id/departments/:deptKey/finalize",
-  requireAuth,
-  requireRole("reviewer", "admin"),
-  async (req, res) => {
-    const request = await ClearanceRequest.findById(req.params.id);
-    if (!request) return res.status(404).json({ error: "Not found" });
-
-    const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
-    if (!dept) return res.status(404).json({ error: "Department not on this request" });
-
-    if (req.user.role === "reviewer" && req.user.departmentKey !== dept.departmentKey) {
-      return res.status(403).json({ error: "You can only finalize your own department" });
-    }
-
-    if (dept.status === "rejected") {
-      return res.status(409).json({
-        error: "This department's clearance was rejected. Clear the rejection before finalizing.",
-      });
-    }
-
     if (dept.status === "completed") {
-      return res.status(409).json({ error: "This department is already finalized" });
+      return res.status(409).json({ error: "This department has already signed" });
     }
 
-    if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
-      return res.status(409).json({
-        error: "Every department before this one must complete their clearance first",
-      });
-    }
-
-    if (!dept.items.every((i) => i.checked)) {
-      return res.status(400).json({ error: "Every checklist item must be checked before finalizing" });
-    }
+    const passwordOk = await verifyPassword(req.user.userID, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
 
     dept.status = "completed";
-    dept.completedAt = new Date();
+    dept.signedByUserID = req.user.userID;
+    dept.signedByFullName = req.user.fullName;
+    dept.signedAt = new Date();
+    dept.evidence = {
+      fileUrl: `${request._id}/${req.file.filename}`,
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname,
+    };
 
-    request.status = computeOverallStatus(request.departments);
-    request.completedAt = request.status === "completed" ? new Date() : null;
-
-    if (request.status === "completed") {
-      await User.findOneAndUpdate(
-        { username: request.employeeUsername },
-        { archivedFromAD: true, archivedAt: new Date() }
-      );
-    }
-
+    // Signing never completes the request by itself -- see
+    // computeOverallStatus. This only ever flips back to "in_progress" here
+    // (e.g. re-evaluating after a late sign), never to "completed"; only
+    // archive-ad can do that.
+    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
     await request.save();
-    res.json(request);
-  }
+
+    res.json(redactToOwnDepartment(request, req.user));
+  })
 );
 
 /**
- * REVIEWER (or admin): reject or clear a rejection for their department.
- *
- * Rejecting requires a reason and immediately blocks the whole request
- * (computeOverallStatus) regardless of how far every other department got --
- * this is the "one of the items isn't actually met" escape hatch from the
- * paper process, distinct from just not having checked an item yet.
- *
- * Checklist items on a rejected department are frozen (see the item-check
- * route's guard above) until a reviewer/admin clears the rejection here,
- * which resumes the department at "pending" -- even if every item is
- * already checked, finalizing still requires the explicit PATCH
- * .../finalize action.
+ * REVIEWER (IT only): sign off ONE of IT's 5 itemized checklist items --
+ * only the reviewer whose assignedItemKey matches may sign it. The
+ * department completes once all 5 items are signed.
  */
-router.patch(
-  "/:id/departments/:deptKey/reject",
+router.post(
+  "/:id/departments/:deptKey/items/:itemKey/sign",
   requireAuth,
-  requireRole("reviewer", "admin"),
-  async (req, res) => {
-    const { rejected, reason } = req.body;
-    if (typeof rejected !== "boolean") {
-      return res.status(400).json({ error: "'rejected' boolean is required" });
-    }
-    if (rejected && (!reason || !reason.trim())) {
-      return res.status(400).json({ error: "A 'reason' is required to reject a department" });
+  requireRole("reviewer"),
+  requireOwnDepartment,
+  upload.single("evidence"),
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "'password' is required to sign" });
+    if (!req.file) return res.status(400).json({ error: "A signature photo or PDF is required to sign" });
+    if (req.user.assignedItemKey !== req.params.itemKey) {
+      return res.status(403).json({ error: "You can only sign your own assigned item" });
     }
 
     const request = await ClearanceRequest.findById(req.params.id);
@@ -321,39 +378,131 @@ router.patch(
 
     const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
     if (!dept) return res.status(404).json({ error: "Department not on this request" });
-
-    if (req.user.role === "reviewer" && req.user.departmentKey !== dept.departmentKey) {
-      return res.status(403).json({ error: "You can only reject on behalf of your own department" });
+    if (dept.signatureMode !== "itemized") {
+      return res.status(400).json({ error: "This department uses single signing, not itemized signing" });
     }
-
     if (!isDepartmentUnlocked(request.departments, dept.departmentKey)) {
-      return res.status(409).json({
-        error: "Every department before this one must complete their clearance first",
-      });
+      return res.status(409).json({ error: "This department is still locked behind an earlier tier" });
     }
 
-    if (rejected) {
-      dept.status = "rejected";
-      dept.rejectedReason = reason.trim();
-      dept.rejectedBy = req.user.username;
-      dept.rejectedAt = new Date();
-    } else {
-      // Resume at "pending" even if every item happens to already be
-      // checked -- completion always requires the explicit finalize action,
-      // never an implicit recompute, same as the item-check route.
-      dept.status = "pending";
-      dept.completedAt = null;
-      dept.rejectedReason = null;
-      dept.rejectedBy = null;
-      dept.rejectedAt = null;
+    const item = dept.items.find((i) => i.key === req.params.itemKey);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+    if (item.status === "completed") {
+      return res.status(409).json({ error: "This item has already been signed" });
     }
 
-    request.status = computeOverallStatus(request.departments);
-    request.completedAt = request.status === "completed" ? new Date() : null;
+    const passwordOk = await verifyPassword(req.user.userID, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
 
+    item.status = "completed";
+    item.signedByUserID = req.user.userID;
+    item.signedByFullName = req.user.fullName;
+    item.signedAt = new Date();
+    item.evidence = {
+      fileUrl: `${request._id}/${req.file.filename}`,
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname,
+    };
+
+    if (dept.items.every((i) => i.status === "completed")) {
+      dept.status = "completed";
+    }
+
+    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
     await request.save();
-    res.json(request);
-  }
+
+    res.json(redactToOwnDepartment(request, req.user));
+  })
 );
+
+/**
+ * REVIEWER (IT only): delete the employee from Active Directory. The real
+ * final step of clearance -- only enabled once every one of the 13
+ * departments has signed, independent of IT's own position (#10) in the
+ * paper order. Any of IT's 5 reviewers may trigger it, re-authenticating the
+ * same way signing does. This is the ONLY route that can ever set
+ * `request.status` to "completed" -- per the general rule that an employee
+ * isn't actually cleared just because every department signed off, signing
+ * routes never do (see computeOverallStatus).
+ */
+router.post("/:id/archive-ad", requireAuth, requireRole("reviewer"), asyncHandler(async (req, res) => {
+  if (req.user.departmentKey !== "it") {
+    return res.status(403).json({ error: "Only IT can delete an employee from Active Directory" });
+  }
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: "'password' is required" });
+
+  const request = await ClearanceRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  if (!allDepartmentsSigned(request.departments)) {
+    return res.status(400).json({ error: "Every department must sign before deleting from Active Directory" });
+  }
+  if (request.archivedFromAD) {
+    return res.status(409).json({ error: "This employee has already been deleted from Active Directory" });
+  }
+
+  const passwordOk = await verifyPassword(req.user.userID, password);
+  if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
+
+  const now = new Date();
+  request.archivedFromAD = true;
+  request.archivedAt = now;
+  request.archivedByUserID = req.user.userID;
+  request.status = computeOverallStatus(request.departments, true);
+  request.completedAt = now;
+  await request.save();
+
+  await Employee.findOneAndUpdate(
+    { employeeNumber: request.employeeNumber },
+    { archivedFromAD: true, archivedAt: now }
+  );
+
+  res.json(redactToOwnDepartment(request, req.user));
+}));
+
+// Streams a stored evidence file. Only oversight reviewers and the
+// department that produced it can view it -- File Management never sees
+// evidence, matching their "high view only" restriction.
+router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (req, res) => {
+  const request = await ClearanceRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  const canView =
+    canSeeFull(req.user) || (req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey);
+  if (!canView) return res.status(403).json({ error: "Forbidden" });
+
+  const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
+  if (!dept) return res.status(404).json({ error: "Department not on this request" });
+
+  const evidence = req.params.itemKey
+    ? dept.items.find((i) => i.key === req.params.itemKey)?.evidence
+    : dept.evidence;
+  if (!evidence) return res.status(404).json({ error: "No evidence uploaded yet" });
+
+  res.sendFile(path.join(UPLOAD_ROOT, evidence.fileUrl));
+}));
+
+// Generates the composited signature PDF on demand. Oversight reviewers can
+// pull it at any time (a live preview of whatever's signed so far). File
+// Management can only pull it for a request THEY filed, and only once it's
+// fully "completed" -- the finished artifact, not a mid-process preview
+// that would otherwise leak per-department progress beyond their high view.
+router.get("/:id/pdf", requireAuth, requireRole("file_management", "reviewer"), asyncHandler(async (req, res) => {
+  const request = await ClearanceRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  const allowed =
+    canSeeFull(req.user) ||
+    (req.user.role === "file_management" &&
+      request.createdByUserID === req.user.userID &&
+      request.status === "completed");
+  if (!allowed) return res.status(403).json({ error: "Forbidden" });
+
+  const buffer = await generateClearancePdf(request);
+  res.set("Content-Type", "application/pdf");
+  res.set("Content-Disposition", `inline; filename="clearance-${request.employeeNumber}.pdf"`);
+  res.send(buffer);
+}));
 
 module.exports = router;

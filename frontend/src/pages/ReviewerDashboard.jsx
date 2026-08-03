@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import LanguageToggle from "../components/LanguageToggle";
-import ChecklistPanel from "../components/ChecklistPanel";
-import DepartmentIcon from "../components/DepartmentIcon";
+import SignaturePanel from "../components/SignaturePanel";
+import RequestOversightGrid from "../components/RequestOversightGrid";
+import DepartmentDashboard from "../components/DepartmentDashboard";
 import { formatDate } from "../utils/formatDate";
 import { reasonI18nKey } from "../utils/leavingReason";
 import logoUrl from "../assets/egas-logo.png";
@@ -38,101 +39,131 @@ function RequestInfo({ request, departmentLabel, t, lang }) {
   );
 }
 
+// One row in the dashboard's request list -- shows enough for a reviewer to
+// triage without opening it (reason, last working day, status), not just a
+// bare employee name.
+function RequestRow({ request, dept, t, lang, onOpen, showArchivedMarker }) {
+  return (
+    <li>
+      <span className="request-row-info">
+        <strong>{request.employeeFullName}</strong>
+        <small>
+          {t(`employee.${reasonI18nKey(request.reason)}`)} · {formatDate(request.lastWorkingDay, lang)}
+        </small>
+      </span>
+      <span className={`badge ${dept?.status === "completed" ? "completed" : "pending"}`}>
+        {dept?.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+      </span>
+      {showArchivedMarker && request.archivedFromAD && (
+        <span className="badge archived">{t("common.archivedFromAdBadge")}</span>
+      )}
+      <button className="secondary-button" onClick={() => onOpen(request._id)}>
+        {t("reviewer.open")}
+      </button>
+    </li>
+  );
+}
+
+// "Delete from Active Directory" -- IT's capstone action, only enabled once
+// every one of the 13 departments has signed. Just a password re-auth, no
+// file (it's a system action, not a signature).
+function ArchiveAdForm({ onSubmit, busy, t }) {
+  const [password, setPassword] = useState("");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!password) return;
+    onSubmit(password);
+    setPassword("");
+  }
+
+  return (
+    <form className="signature-form archive-ad-form" onSubmit={handleSubmit}>
+      <p>{t("reviewer.archiveAdHint")}</p>
+      <div className="form-group">
+        <label>{t("signature.passwordLabel")}</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          required
+        />
+      </div>
+      <button type="submit" className="reject-button" disabled={busy || !password}>
+        {busy ? t("reviewer.archiving") : t("reviewer.archiveAdButton")}
+      </button>
+    </form>
+  );
+}
+
 export default function ReviewerDashboard() {
   const { t, i18n } = useTranslation();
   const isAr = i18n.language === "ar";
   const { user, logout } = useAuth();
   const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
-  const [selectedDeptKey, setSelectedDeptKey] = useState(null);
-  const [busyKey, setBusyKey] = useState(null);
-  const [rejecting, setRejecting] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
-  const [sortBy, setSortBy] = useState("submitted");
+  const [signing, setSigning] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
-  async function loadList() {
+  const isOversight = Boolean(user.hasOversightDashboard);
+  const isIT = user.departmentKey === "it";
+
+  async function reload(keepId) {
     const { data } = await client.get("/requests");
     setRequests(data);
+    setLoading(false);
+    setSelectedId(keepId && data.some((r) => r._id === keepId) ? keepId : null);
   }
 
   useEffect(() => {
-    loadList();
+    reload();
   }, []);
 
-  function currentDepartmentLabel(r) {
-    const dept = r.departments.find((d) => d.status !== "completed") || r.departments[r.departments.length - 1];
-    return isAr ? dept.name_ar : dept.name_en;
-  }
-
-  const sortedRequests = [...requests].sort((a, b) => {
-    if (sortBy === "lastWorkingDay") {
-      return new Date(a.lastWorkingDay) - new Date(b.lastWorkingDay);
-    }
-    if (sortBy === "department") {
-      return currentDepartmentLabel(a).localeCompare(currentDepartmentLabel(b), i18n.language);
-    }
-    return 0; // "submitted" -- keep the server's order (already sorted by createdAt)
-  });
-
   const selected = requests.find((r) => r._id === selectedId);
-  const activeDeptKey = user.role === "admin" ? selectedDeptKey : user.departmentKey;
-  const myDept = selected?.departments.find((d) => d.departmentKey === activeDeptKey);
+  const myDept = selected?.departments.find((d) => d.departmentKey === user.departmentKey);
 
-  function openRequest(id) {
-    setSelectedId(id);
-    setSelectedDeptKey(null);
+  function myDeptOf(r) {
+    return r.departments.find((d) => d.departmentKey === user.departmentKey);
+  }
+  const needsActionList = requests.filter((r) => myDeptOf(r)?.needsAction);
+  const handledList = requests.filter((r) => !myDeptOf(r)?.needsAction);
+
+  function isDeptUnlocked(request, dept) {
+    if (!dept) return false;
+    return request.departments.filter((d) => d.tier < dept.tier).every((d) => d.status === "completed");
   }
 
-  function backToList() {
-    setSelectedId(null);
-    setSelectedDeptKey(null);
-  }
-
-  async function handleCheck(itemKey, checked) {
+  async function handleSign({ itemKey, password, file }) {
     if (!selected || !myDept) return;
-    const deptKey = myDept.departmentKey;
-    setBusyKey(itemKey);
+    setSigning(true);
     try {
-      const { data } = await client.patch(
-        `/requests/${selected._id}/departments/${deptKey}/items/${itemKey}`,
-        { checked }
-      );
-      setRequests((prev) => prev.map((r) => (r._id === data._id ? data : r)));
+      const form = new FormData();
+      form.append("password", password);
+      form.append("evidence", file);
+      const url = itemKey
+        ? `/requests/${selected._id}/departments/${myDept.departmentKey}/items/${itemKey}/sign`
+        : `/requests/${selected._id}/departments/${myDept.departmentKey}/sign`;
+      await client.post(url, form);
+      await reload(selected._id);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to update item");
+      alert(err.response?.data?.error || t("signature.error"));
     } finally {
-      setBusyKey(null);
+      setSigning(false);
     }
   }
 
-  async function handleFinalize() {
-    if (!selected || !myDept) return;
-    setFinalizing(true);
+  async function handleArchive(password) {
+    if (!selected) return;
+    setArchiving(true);
     try {
-      const { data } = await client.patch(
-        `/requests/${selected._id}/departments/${myDept.departmentKey}/finalize`
-      );
-      setRequests((prev) => prev.map((r) => (r._id === data._id ? data : r)));
+      await client.post(`/requests/${selected._id}/archive-ad`, { password });
+      await reload(selected._id);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to finalize department");
+      alert(err.response?.data?.error || t("signature.error"));
     } finally {
-      setFinalizing(false);
-    }
-  }
-
-  async function handleReject(rejected, reason) {
-    if (!selected || !myDept) return;
-    setRejecting(true);
-    try {
-      const { data } = await client.patch(
-        `/requests/${selected._id}/departments/${myDept.departmentKey}/reject`,
-        { rejected, reason }
-      );
-      setRequests((prev) => prev.map((r) => (r._id === data._id ? data : r)));
-    } catch (err) {
-      alert(err.response?.data?.error || "Failed to update rejection");
-    } finally {
-      setRejecting(false);
+      setArchiving(false);
     }
   }
 
@@ -160,101 +191,97 @@ export default function ReviewerDashboard() {
               <div className="page-heading">
                 <h1>{t("reviewer.title")}</h1>
               </div>
-              {requests.length === 0 && <p>{t("reviewer.empty")}</p>}
-              {requests.length > 0 && (
-                <div className="sort-control">
-                  <label htmlFor="reviewer-sort">{t("reviewer.sortLabel")}</label>
-                  <select id="reviewer-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                    <option value="submitted">{t("reviewer.sortSubmitted")}</option>
-                    <option value="lastWorkingDay">{t("reviewer.sortLastWorkingDay")}</option>
-                    <option value="department">{t("reviewer.sortDepartment")}</option>
-                  </select>
-                </div>
+              {loading && <p>{t("common.loading")}</p>}
+              {!loading && requests.length === 0 && <p>{t("reviewer.empty")}</p>}
+
+              {!loading && requests.length > 0 && (
+                <>
+                  <DepartmentDashboard requests={requests} user={user} />
+
+                  {needsActionList.length > 0 && (
+                    <>
+                      <h2 className="request-list-section-title">{t("reviewer.sectionNeedsAction")}</h2>
+                      <ul className="request-list">
+                        {needsActionList.map((r) => (
+                          <RequestRow
+                            key={r._id}
+                            request={r}
+                            dept={myDeptOf(r)}
+                            t={t}
+                            lang={i18n.language}
+                            onOpen={setSelectedId}
+                            showArchivedMarker={isIT}
+                          />
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {handledList.length > 0 && (
+                    <>
+                      <h2 className="request-list-section-title">{t("reviewer.sectionHandled")}</h2>
+                      <ul className="request-list">
+                        {handledList.map((r) => (
+                          <RequestRow
+                            key={r._id}
+                            request={r}
+                            dept={myDeptOf(r)}
+                            t={t}
+                            lang={i18n.language}
+                            onOpen={setSelectedId}
+                            showArchivedMarker={isIT}
+                          />
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </>
               )}
-              <ul className="request-list">
-                {sortedRequests.map((r) => (
-                  <li key={r._id}>
-                    {t("reviewer.employee")}: {r.employeeFullName}
-                    <button className="secondary-button" onClick={() => openRequest(r._id)}>
-                      {t("reviewer.open")}
-                    </button>
-                  </li>
+            </>
+          )}
+
+          {selected && (
+            <>
+              <button className="secondary-button" onClick={() => setSelectedId(null)}>
+                &larr; {t("reviewer.backToList")}
+              </button>
+              <div className="page-heading" style={{ marginTop: 18 }}>
+                <h1>{selected.employeeFullName}</h1>
+              </div>
+              <RequestInfo
+                request={selected}
+                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
+                t={t}
+                lang={i18n.language}
+              />
+
+              {isOversight && <RequestOversightGrid request={selected} detail="full" />}
+
+              {myDept &&
+                (isDeptUnlocked(selected, myDept) ? (
+                  <SignaturePanel department={myDept} user={user} onSign={handleSign} busy={signing} />
+                ) : (
+                  <div className="rejection-banner">
+                    <strong>{t("reviewer.departmentLockedTitle")}</strong>
+                    <p>{t("reviewer.departmentLockedBody")}</p>
+                  </div>
                 ))}
-              </ul>
-            </>
-          )}
 
-          {selected && user.role === "admin" && !selectedDeptKey && (
-            <>
-              <button className="secondary-button" onClick={backToList}>
-                &larr; {t("reviewer.backToList")}
-              </button>
-              <div className="page-heading" style={{ marginTop: 18 }}>
-                <h1>{selected.employeeFullName}</h1>
-                <p>{t("reviewer.selectDepartment")}</p>
-              </div>
-              <RequestInfo
-                request={selected}
-                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
-                t={t}
-                lang={i18n.language}
-              />
-              <ul className="request-list">
-                {selected.departments.map((d, idx) => {
-                  const isLocked =
-                    d.status === "pending" &&
-                    idx > 0 &&
-                    selected.departments.slice(0, idx).some((prior) => prior.status !== "completed");
-
-                  return (
-                    <li key={d.departmentKey}>
-                      <span className="request-list-dept">
-                        <DepartmentIcon departmentKey={d.departmentKey} className="request-list-icon" />
-                        {isAr ? d.name_ar : d.name_en}
-                      </span>
-                      <span className={`badge ${isLocked ? "upcoming" : d.status}`}>
-                        {d.status === "completed"
-                          ? t("employee.departmentCompleted")
-                          : d.status === "rejected"
-                          ? t("employee.departmentRejected")
-                          : isLocked
-                          ? t("employee.departmentUpcoming")
-                          : t("employee.departmentPending")}
-                      </span>
-                      <button className="secondary-button" onClick={() => setSelectedDeptKey(d.departmentKey)}>
-                        {t("reviewer.open")}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-
-          {selected && myDept && (
-            <>
-              <button className="secondary-button" onClick={backToList}>
-                &larr; {t("reviewer.backToList")}
-              </button>
-              <div className="page-heading" style={{ marginTop: 18 }}>
-                <h1>{selected.employeeFullName}</h1>
-              </div>
-              <RequestInfo
-                request={selected}
-                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
-                t={t}
-                lang={i18n.language}
-              />
-              <ChecklistPanel
-                department={myDept}
-                allDepartments={selected.departments}
-                onCheck={handleCheck}
-                onReject={handleReject}
-                onFinalize={handleFinalize}
-                busyKey={busyKey}
-                rejecting={rejecting}
-                finalizing={finalizing}
-              />
+              {isIT &&
+                (selected.archivedFromAD ? (
+                  <div className="success-banner">
+                    <strong>{t("reviewer.archivedBanner")}</strong>
+                  </div>
+                ) : (
+                  // NOT selected.status === "completed" -- per the general
+                  // rule, the request only reads as "completed" once IT has
+                  // actually deleted the employee from AD, which would make
+                  // this button impossible to ever reach. `readyForAdDeletion`
+                  // is the "every department has signed" signal on its own.
+                  selected.readyForAdDeletion && (
+                    <ArchiveAdForm onSubmit={handleArchive} busy={archiving} t={t} />
+                  )
+                ))}
             </>
           )}
         </div>

@@ -1,15 +1,19 @@
 # EGAS Employee Clearance System
 
-Digital replacement for EGAS's paper "إخلاء طرف" (clearance) process. An employee
-retiring or resigning submits one request online; each of the 13 departments
-checks off their own requirements for that employee instead of signing a paper
-form. The IT department's checklist always finishes last, since its last step
-deletes the employee from Active Directory.
+Digital replacement for EGAS's paper "إخلاء طرف" (clearance) process. When an
+employee retires or resigns, **File Management (إدارة الملفات)** files a
+clearance request on their behalf — the employee never logs in. Each of the 13
+departments on the paper form reviews and signs off; departments 1–11 sign in
+parallel, and the last two (Wages, Financial Affairs) are gated behind all of
+the first 11 and get a full oversight dashboard. IT is department #10 and, once
+every one of the 13 has signed, gets a manual "Delete from Active Directory"
+button.
 
-This repo is an early prototype (originally built for a Monday demo) — a
-login + submit request + per-department review vertical slice, wired up
-generically enough that the other 15 departments can be filled in with real
-requirements later without rearchitecting anything.
+This repo went through a full workflow revamp on 2026-08-03 to match how the
+real paper process actually works (see `CLAUDE.md` for the full design). It's
+wired up generically enough (config-driven department order/tier/signature
+mode) that real per-department detail can still change without rearchitecting
+anything.
 
 ## Quick start
 
@@ -21,7 +25,7 @@ either works, just point `MONGO_URI` at it).
 cd backend
 npm install
 cp .env.example .env        # edit MONGO_URI if not using local MongoDB
-npm run seed                # creates departments + mock AD users
+npm run seed                # creates departments, staff accounts, employee directory
 
 # Frontend
 cd ../frontend
@@ -39,20 +43,23 @@ terminals if you prefer.)
 
 Open http://localhost:5173. Everyone's password is `Passw0rd!`.
 
-| Username | Role | Notes |
+| User ID | Role | Notes |
 |---|---|---|
-| `sara.employee` | employee | fresh account, no request submitted yet |
-| `mohamed.retiring` | employee | all 12 non-IT departments already completed — log in as `it.reviewer` to demo the final IT gate directly |
-| `admin` | admin | can check off, finalize, or reject any department, for testing |
-| `it.reviewer` | reviewer | IT department, the 9-step ordered checklist |
-| `<departmentKey>.reviewer` | reviewer | every other seeded department (see `backend/src/seed/users.data.js`) |
+| `file.management` | File Management | files new clearance requests, sees a high-level status summary of their own requests |
+| `<departmentKey>.reviewer1` / `reviewer2` | reviewer | every department except IT — any one of the pair can sign |
+| `it.<itemKey>.reviewer` | reviewer (IT) | 5 accounts, one per itemized checklist item (`mobile_data_lines`, `phone`, `pc_account_mailbox`, `sap_service`, `sap_account_removal`) |
+| `wages.reviewer1` / `finance.reviewer1` | reviewer (oversight) | same single-signature flow as any department, plus the full 13-department status grid for every request |
+
+See `backend/src/seed/users.data.js` for the complete list, and
+`backend/src/seed/employees.data.js` for the mock employee directory File
+Management picks from when filing a request.
 
 Tip: the login page also has a collapsible **"Demo accounts"** panel that
-lists all of the above and fills the form in for you on click — see
+lists the accounts above and fills the form in for you on click — see
 `frontend/src/demoAccounts.js` (temporary, for testing only).
 
-To confirm the whole flow works end to end (sequential department gating,
-item ordering, and the finalize step) after `npm run seed` + `npm run dev`:
+To confirm the whole flow works end to end (tier locking, single vs itemized
+signing, visibility redaction, AD deletion) after `npm run seed` + `npm run dev`:
 ```bash
 cd backend
 node scripts/smoke-test.js
@@ -60,115 +67,109 @@ node scripts/smoke-test.js
 
 ## How the clearance workflow works
 
-1. The employee logs in (mock Active Directory) and submits a request,
-   choosing why they're leaving — **resignation**, **moving to a new
-   company**, or **retirement** (Egypt's mandatory age-60 policy, "المعاش")
-   — plus a suggested last working day. Their department comes from the AD
-   login itself, not a form field.
-2. The request snapshots every department's current checklist template at
-   that moment, so later edits to a department's template never change
+1. **File Management logs in** and files a request on an employee's behalf:
+   search the employee directory by number or name
+   (`GET /api/employees/search`), pick one, choose why they're leaving —
+   **resignation**, **moving to a new company**, or **retirement** (Egypt's
+   mandatory age-60 policy, "المعاش") — plus a suggested last working day.
+   The employee themselves never logs in or touches the system.
+2. The request snapshots the employee's directory record and every
+   department's current template at that moment, so later edits never change
    requests already in flight.
-3. Departments process strictly in order, not in parallel: a department is
-   locked — hidden from that reviewer's queue entirely, 403s on direct
-   access, 409s on any action — until every department before it in the
-   request's order has fully completed its own clearance. Items WITHIN an
-   unlocked department must still be checked in sequence. IT is simply last
-   in that order, so nothing IT-specific is hardcoded anywhere to make it
-   "go last."
-4. Checking every item on a department's checklist doesn't complete it —
-   that's just prep. A reviewer/admin has to explicitly click **"Confirm
-   department clearance"** to finalize it, matching a real signature rather
-   than an implicit side effect.
-5. Instead of finalizing, a reviewer can **reject** the department's
-   clearance with a required reason — for when something's actually wrong
-   (an unresolved item), not just "not done yet." A rejection immediately
-   blocks the whole request and shows the reason on the employee's
-   dashboard until a reviewer or admin clears it, which always resumes the
-   department at "pending" (even if every item is already checked —
-   finalizing is still a separate, explicit step).
-6. IT's checklist is fixed and ordered: Phone → PC → Mobile Line → Data Line →
-   Account → Mailbox → SAP Services → SAP Account → Delete from Active Directory.
-   Checking that last item also has its own one-time confirmation dialog,
-   since it's the actual "delete this person from Active Directory" action.
-7. Once IT — the last department in the order — is finalized, the whole
-   request is marked `completed` and the employee's mock AD record is
-   flagged `archivedFromAD: true`.
+3. **Departments 1–11 (including IT) sign in parallel** — no gating between
+   them. Departments 12–13 (Wages, Financial Affairs) are locked until all of
+   1–11 have signed, then unlock together.
+4. **Signing = re-authentication + evidence upload**, not a checkbox: a
+   reviewer re-enters their own password and uploads a photo or PDF of the
+   physical signature/stamp for that specific request. Any one of a
+   department's 2+ reviewers can sign it (12 of 13 departments). There's no
+   separate "confirm"/finalize step and no reject/hold flow — a department is
+   either unsigned or signed.
+5. **IT is the one exception**: 5 checklist items (mobile & data lines,
+   phone, PC/account/mailbox, SAP service, SAP account removal), each
+   permanently owned by one of IT's 5 reviewer accounts. IT's department
+   entry completes once all 5 have individually signed their own item.
+6. **Visibility is need-to-know**: departments 1–11 (including IT) only ever
+   see their own slice of a request — never what other departments have
+   signed. Wages and Finance additionally get a full 13-department oversight
+   grid for every request. File Management sees only a high-level progress
+   summary of requests they filed — department status, no signer identity or
+   evidence.
+7. Once **all 13 departments have signed**, the request is `completed`, and
+   a **"Delete from Active Directory"** button appears for IT's 5 reviewers
+   (re-authenticate again, no file) — independent of IT's own position (#10)
+   in the order. This flips `archivedFromAD: true` on the employee's
+   directory record.
+8. At any point, File Management (their own completed requests only) or a
+   Wages/Finance reviewer (any request, any time, as a live preview) can
+   download a composited PDF of the original paper form with each signed
+   department's evidence photo placed in its row.
 
 ### Request lifecycle
 
 ```mermaid
 flowchart TD
-    A(["Employee logs in<br/>(mock Active Directory)"]) --> B["Submit clearance request:<br/>reason for leaving + suggested last working day"]
-    B --> C["Request created — snapshots<br/>all 13 departments' checklists, in order"]
-    C --> D["Next department in the order<br/>(locked until every department before it is COMPLETED)"]
-    D --> E["Reviewer checks that department's<br/>items, in order"]
-    E --> F["Reviewer clicks 'Confirm department<br/>clearance' once every item is checked"]
-    D --> G["Reviewer rejects,<br/>with a required reason"]
-    F --> H(["Department: COMPLETED"])
-    G --> I(["Department: REJECTED"])
-    I --> J["Employee sees why immediately:<br/>red alert + red icon on their dashboard"]
-    I --> K["Reviewer clears the rejection<br/>(always resumes at PENDING)"]
-    K --> D
-    H --> L{"Was this the last<br/>department in the order (IT)?"}
-    L -->|"No"| D
-    L -->|"Yes"| M(["Request: COMPLETED"])
-    M --> N["Employee's mock AD record<br/>flagged archivedFromAD: true"]
+    A(["File Management logs in"]) --> B["Search employee directory,<br/>choose reason + last working day"]
+    B --> C["Request created — snapshots the<br/>employee + all 13 departments (tier 1 or 2)"]
+    C --> D["Tier-1 departments (1–11, incl. IT)<br/>sign in PARALLEL, no gating"]
+    D --> E["Reviewer re-enters password +<br/>uploads signature photo/PDF"]
+    E --> F(["Department: COMPLETED"])
+    D --> G["IT only: each of 5 reviewers signs<br/>their own assigned item"]
+    G --> H{"All 5 IT items signed?"}
+    H -->|"No"| G
+    H -->|"Yes"| F
+    F --> I{"Have all tier-1 departments<br/>(1–11) completed?"}
+    I -->|"No"| D
+    I -->|"Yes"| J["Tier-2 unlocks: Wages + Finance<br/>sign in parallel"]
+    J --> K(["Request: COMPLETED"])
+    K --> L["'Delete from Active Directory'<br/>button appears for IT's 5 reviewers"]
+    L --> M["Any IT reviewer re-authenticates<br/>to trigger it"]
+    M --> N["Employee's directory record<br/>flagged archivedFromAD: true"]
 ```
 
 ### Department status states
 
-Every department entry on a request is one of three states. This is the
-state machine `computeOverallStatus()` and the finalize/reject/item-check
-routes in `backend/src/routes/request.routes.js` implement:
+Much simpler than before — no more "rejected" state, no separate finalize
+step. This is the state machine `computeOverallStatus()` and the sign/
+archive-ad routes in `backend/src/routes/request.routes.js` implement:
 
 ```mermaid
 stateDiagram-v2
     [*] --> pending
-    pending --> pending: item checked/unchecked (even once every item is checked)
-    pending --> completed: reviewer finalizes (every item checked, department unlocked)
-    pending --> rejected: reviewer rejects (reason required)
-    rejected --> pending: rejection cleared -- always resumes at pending
-    completed --> pending: an already-checked item gets unchecked (reopens it)
+    pending --> completed: reviewer re-authenticates + uploads evidence (single mode)
+    pending --> completed: every itemized item signed (IT only)
     completed --> [*]
 ```
 
-A single `rejected` department is enough to flip the *entire request's*
-status to `rejected`, regardless of how far every other department got — see
-`computeOverallStatus()`.
-
-> **Display note:** the employee's progress grid colors departments green
-> (done), gold (the next one still needed), gray (further down the list), or
-> red (rejected) purely from each department's status and its position in the
-> list. As of the sequential-processing change (2026-08-02), this accurately
-> reflects real backend enforcement — the gold department really is the only
-> one currently unlocked and actionable, not just a display simplification.
+A request's overall `status` is `"completed"` once every one of its 13
+department entries is `"completed"` — otherwise `"in_progress"`.
 
 ## Known gaps / things that still need real-world input
 
 These are intentional placeholders, not bugs — see `PROJECT_STATUS.md` for the
 live tracker.
 
-- **Only IT's checklist is real.** Every other department currently has one
-  generic placeholder checklist item ("No outstanding items"). Someone needs to
-  sit with each department and write down their actual requirements, then update
-  `departments.data.js` — no other code changes needed.
-- **No real Active Directory/LDAP integration yet.** Login checks a mock `User`
-  collection in MongoDB that mimics AD. See "mock Active Directory" in
-  `CLAUDE.md` for exactly what changes when real LDAP access is available.
+- **No real Active Directory/LDAP integration yet.** Both staff logins
+  (`User`) and the employee directory (`Employee`) are mock MongoDB
+  collections. See "mock Active Directory" in `CLAUDE.md` for exactly what
+  changes when real LDAP access is available.
 - **"Temporary database" design for AD-deleted employees is a placeholder.**
-  Right now we just flag the same Mongo record `archivedFromAD: true` instead of
-  actually deleting anything. The brief mentions a more careful design is needed
-  here (so an employee can still log in and see their completed clearance after
-  IT "deletes" them) — that's an open design task, not yet solved.
-- **No manager-vs-staff distinction within a department.** Everyone who reviews
-  for a department currently has the same `reviewer` role. If a department needs
-  a "staff checks, then manager approves" step, that's a schema change to
-  `checklistItems`, not yet designed.
+  Right now we just flag the `Employee` record `archivedFromAD: true` instead
+  of actually deleting anything. The brief mentions a more careful design is
+  needed here — that's an open design task, not yet solved.
+- **PDF compositing only embeds image evidence.** A PDF upload is stored and
+  servable but renders as a text placeholder in the composited form rather
+  than being embedded — see `backend/src/services/clearancePdf.js`.
+- **The paper-form row coordinates in `clearancePdf.js` are hand-calibrated
+  against one scanned copy.** If a cleaner/different scan replaces
+  `backend/assets/clearance-form-template.pdf`, those coordinates need
+  re-tuning (instructions are in that file's comments).
 - **The "demo accounts" card on the login page is temporary**, for local
   testing/demos only — see `frontend/src/demoAccounts.js` for the note on
   removing it once real accounts exist.
 
 ## Tech stack
 
-Backend: Node.js, Express, MongoDB/Mongoose, JWT (jsonwebtoken), bcryptjs.
+Backend: Node.js, Express, MongoDB/Mongoose, JWT (jsonwebtoken), bcryptjs,
+multer (file uploads), pdf-lib (PDF compositing).
 Frontend: React, Vite, React Router, react-i18next (Arabic default, RTL support).

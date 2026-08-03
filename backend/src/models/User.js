@@ -1,43 +1,35 @@
 const mongoose = require("mongoose");
 
 /**
- * MOCK ACTIVE DIRECTORY.
+ * MOCK ACTIVE DIRECTORY (staff logins only).
  * This collection stands in for EGAS's real Active Directory until real
- * LDAP access is available (see README "Auth" section). Do not build
- * business logic that assumes this IS real AD -- keep the auth layer
- * (src/routes/auth.routes.js) as the only place that knows about this model,
- * so swapping in real LDAP later only touches that one file.
+ * LDAP access is available. Do not build business logic that assumes this
+ * IS real AD -- keep the auth layer (src/routes/auth.routes.js) as the only
+ * place that knows about this model, so swapping in real LDAP later only
+ * touches that one file.
+ *
+ * Employees being cleared are NOT in this collection and never log in --
+ * see Employee.js for their (auth-less) directory record.
  */
 const userSchema = new mongoose.Schema(
   {
-    username: { type: String, required: true, unique: true, trim: true }, // mimics AD sAMAccountName
+    userID: { type: String, required: true, unique: true, trim: true }, // mimics AD sAMAccountName
     passwordHash: { type: String, required: true },
     fullName: { type: String, required: true },
     role: {
       type: String,
-      enum: ["employee", "reviewer", "admin"],
+      enum: ["file_management", "reviewer"],
       required: true,
     },
-    // Only set when role === "reviewer": which department this person checks off.
+    // Only set when role === "reviewer": which of the 13 clearance
+    // departments this person reviews for. A department can have any number
+    // of reviewer accounts (any one of them signing is enough, except IT --
+    // see assignedItemKey).
     departmentKey: { type: String, default: null },
-    // Only meaningful when role === "employee". department_ar/department_en
-    // is which EGAS department this employee actually WORKS in -- unrelated
-    // to the 13 clearance departments in Department.js, which are who signs
-    // off on their clearance, not where they work. Might legitimately be one
-    // of the same names (e.g. someone from Warehouses retiring), but they're
-    // conceptually different fields.
-    employeeMeta: {
-      jobTitle: { type: String, default: "" },
-      department_ar: { type: String, default: "" },
-      department_en: { type: String, default: "" },
-      retirementDate: { type: Date, default: null },
-    },
-    // Flips to true once the IT department deletes this person from AD.
-    // They are NOT removed from this collection so they can keep logging in
-    // to view their (now completed) clearance request. This is a placeholder
-    // for the real "temporary database" design mentioned in the project brief.
-    archivedFromAD: { type: Boolean, default: false },
-    archivedAt: { type: Date, default: null },
+    // Only set for IT reviewers (departmentKey === "it"): which of IT's
+    // itemized checklist items this specific person is responsible for
+    // signing. Must match one of Department("it").checklistItems[].key.
+    assignedItemKey: { type: String, default: null },
   },
   { timestamps: true }
 );

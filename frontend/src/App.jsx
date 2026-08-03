@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
-import EmployeeDashboard from "./pages/EmployeeDashboard";
+import FileManagementDashboard from "./pages/FileManagementDashboard";
 import ReviewerDashboard from "./pages/ReviewerDashboard";
 
 function RequireRole({ roles, children }) {
@@ -14,7 +14,7 @@ function RequireRole({ roles, children }) {
 function Home() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === "employee" ? "/employee" : "/reviewer"} replace />;
+  return <Navigate to={user.role === "file_management" ? "/file-management" : "/reviewer"} replace />;
 }
 
 export default function App() {
@@ -23,17 +23,17 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
-          path="/employee"
+          path="/file-management"
           element={
-            <RequireRole roles={["employee"]}>
-              <EmployeeDashboard />
+            <RequireRole roles={["file_management"]}>
+              <FileManagementDashboard />
             </RequireRole>
           }
         />
         <Route
           path="/reviewer"
           element={
-            <RequireRole roles={["reviewer", "admin"]}>
+            <RequireRole roles={["reviewer"]}>
               <ReviewerDashboard />
             </RequireRole>
           }

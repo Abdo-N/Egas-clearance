@@ -1,3 +1,11 @@
+> **Superseded 2026-08-03.** This was the task split for the original
+> "employee submits, IT signs last, 9-item checklist" design. The whole
+> workflow was rebuilt to match the real paper process (File Management
+> files requests, tier-based parallel signing, re-auth + evidence-photo
+> signatures, no more admin role) -- see `CLAUDE.md` and `PROJECT_STATUS.md`
+> for the current design. Kept below as a historical record of the first
+> sprint, not as current guidance.
+
 # Task Split — Fri → Mon Demo Sprint
 
 **Updated: team is now 3 people — Nader (lead), Ziad, Jana.** Habiba and

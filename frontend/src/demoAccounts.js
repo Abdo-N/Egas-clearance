@@ -5,29 +5,32 @@
 
 export const demoPassword = "Passw0rd!";
 
-export const demoEmployees = [
-  { username: "sara.employee", label_en: "Employee — fresh request", label_ar: "موظف — طلب جديد" },
-  { username: "mohamed.retiring", label_en: "Employee — all but IT cleared", label_ar: "موظف — تم إخلاء طرفه عدا تكنولوجيا المعلومات" },
-];
-
-export const demoAdmin = {
-  username: "admin",
-  label_en: "Admin — all departments",
-  label_ar: "مسؤول — كل الأقسام",
+export const demoFileManagement = {
+  userID: "file.management",
+  label_en: "File Management — files requests",
+  label_ar: "إدارة الملفات — تنشئ الطلبات",
 };
 
+// One reviewer shown per department (each has a "reviewer1"/"reviewer2" pair
+// -- either signs -- so only reviewer1 is listed here). IT has 5 accounts,
+// one per itemized checklist item, instead of the usual pair. wages/finance
+// are flagged (oversight) since they also get the full status dashboard.
 export const demoReviewers = [
-  { username: "security.reviewer", label_en: "Security", label_ar: "الأمن" },
-  { username: "legal.reviewer", label_en: "Legal Affairs", label_ar: "الشئون القانونية" },
-  { username: "medical.reviewer", label_en: "Medical & Treatment Affairs", label_ar: "الشئون الطبية والعلاجية" },
-  { username: "healthcare_accounts.reviewer", label_en: "Healthcare Accounts", label_ar: "حسابات الرعاية الصحية" },
-  { username: "library.reviewer", label_en: "Library", label_ar: "المكتبة" },
-  { username: "warehouses.reviewer", label_en: "General Administration of Warehouses", label_ar: "الإدارة العامة للمخازن" },
-  { username: "transport.reviewer", label_en: "General Administration of Transportation Services", label_ar: "أ.ع لخدمات النقل" },
-  { username: "hr_development.reviewer", label_en: "HR Development", label_ar: "تنمية الموارد البشرية" },
-  { username: "illicit_gains.reviewer", label_en: "Illicit Gains Authority", label_ar: "الكسب غير المشروع" },
-  { username: "public_relations.reviewer", label_en: "Public Relations & Social Services", label_ar: "العلاقات العامة والخدمات الاجتماعية" },
-  { username: "wages.reviewer", label_en: "Wages & Entitlements", label_ar: "الأجور والاستحقاقات" },
-  { username: "finance.reviewer", label_en: "Financial Affairs", label_ar: "الشئون المالية" },
-  { username: "it.reviewer", label_en: "IT & Communications Systems — final gate", label_ar: "نظم المعلومات والاتصالات — البوابة الأخيرة" },
+  { userID: "illicit_gains.reviewer1", label_en: "Illicit Gains", label_ar: "الكسب غير مشروع" },
+  { userID: "library.reviewer1", label_en: "Library", label_ar: "أ.ع المكتبة" },
+  { userID: "security.reviewer1", label_en: "Security", label_ar: "الأمن" },
+  { userID: "legal.reviewer1", label_en: "Legal Affairs", label_ar: "الشئون القانونية" },
+  { userID: "medical.reviewer1", label_en: "Medical & Treatment Affairs", label_ar: "أ.ع الشئون الطبية والعلاجية" },
+  { userID: "healthcare_accounts.reviewer1", label_en: "Healthcare Accounts", label_ar: "أ.ع حسابات الرعاية الصحية" },
+  { userID: "hr_development.reviewer1", label_en: "HR Development", label_ar: "تنمية الموارد البشرية" },
+  { userID: "public_relations.reviewer1", label_en: "Public Relations & Social Services", label_ar: "العلاقات العامة وخدمات الإجتماعية" },
+  { userID: "warehouses.reviewer1", label_en: "Warehouses", label_ar: "المخازن" },
+  { userID: "it.mobile_data_lines.reviewer", label_en: "IT — Mobile & Data Lines", label_ar: "تكنولوجيا المعلومات — خط المحمول والداتا" },
+  { userID: "it.phone.reviewer", label_en: "IT — Phone", label_ar: "تكنولوجيا المعلومات — الهاتف" },
+  { userID: "it.pc_account_mailbox.reviewer", label_en: "IT — PC, Account & Mailbox", label_ar: "تكنولوجيا المعلومات — الكمبيوتر والحساب والبريد" },
+  { userID: "it.sap_service.reviewer", label_en: "IT — SAP Service", label_ar: "تكنولوجيا المعلومات — خدمة SAP" },
+  { userID: "it.sap_account_removal.reviewer", label_en: "IT — SAP Account Removal", label_ar: "تكنولوجيا المعلومات — إزالة حساب SAP" },
+  { userID: "transport.reviewer1", label_en: "Transportation Services", label_ar: "خدمات النقل" },
+  { userID: "wages.reviewer1", label_en: "Wages & Entitlements (oversight)", label_ar: "الأجور والاستحقاقات (إشراف)" },
+  { userID: "finance.reviewer1", label_en: "Financial Affairs (oversight)", label_ar: "الشئون المالية (إشراف)" },
 ];

@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import SupportModal from "../components/SupportModal";
 import LanguageToggle from "../components/LanguageToggle";
 import logoUrl from "../assets/egas-logo.png";
-import { demoEmployees, demoAdmin, demoReviewers, demoPassword } from "../demoAccounts";
+import { demoFileManagement, demoReviewers, demoPassword } from "../demoAccounts";
 
 // الخلفية الكبيرة للشاشة بالكامل (المنصة والغروب)
 import mainBackground from "../assets/egas-bg.jpg";
@@ -29,14 +29,14 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [username, setUsername] = useState("");
+  const [userID, setUserID] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
 
   function fillDemo(account) {
-    setUsername(account.username);
+    setUserID(account.userID);
     setPassword(demoPassword);
   }
 
@@ -45,8 +45,8 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const user = await login(username, password);
-      navigate(user.role === "employee" ? "/employee" : "/reviewer");
+      const user = await login(userID, password);
+      navigate(user.role === "file_management" ? "/file-management" : "/reviewer");
     } catch (err) {
       setError(t("login.error") || "اسم المستخدم أو كلمة المرور غير صحيحة");
     } finally {
@@ -129,12 +129,12 @@ export default function Login() {
         <form onSubmit={handleSubmit} style={{ width: "100%" }}>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "13px", color: "#333", marginBottom: "5px", fontWeight: "500" }}>
-              {t("login.username")}
+              {t("login.userID")}
             </label>
             <input
               type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={userID}
+              onChange={(e) => setUserID(e.target.value)}
               required
               style={{
                 width: "100%",
@@ -231,39 +231,26 @@ export default function Login() {
           <div className={`demo-panel-wrapper${showDemo ? " open" : ""}`}>
             <div className="demo-panel-inner">
               <div style={{ backgroundColor: "#d8dcde", padding: "10px", borderRadius: "6px", marginTop: "5px", fontSize: "11px", color: "#444" }}>
-                <strong>{t("login.demoAccounts.employees")}</strong>
-                {demoEmployees.map((acc) => (
-                  <button
-                    type="button"
-                    key={acc.username}
-                    onClick={() => fillDemo(acc)}
-                    className="login-demo-account-btn"
-                    style={demoAccountButtonStyle}
-                  >
-                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
-                  </button>
-                ))}
-
-                <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.admin")}</strong>
+                <strong>{t("login.demoAccounts.fileManagement")}</strong>
                 <button
                   type="button"
-                  onClick={() => fillDemo(demoAdmin)}
+                  onClick={() => fillDemo(demoFileManagement)}
                   className="login-demo-account-btn"
                   style={demoAccountButtonStyle}
                 >
-                  {isAr ? demoAdmin.label_ar : demoAdmin.label_en} <code>({demoAdmin.username})</code>
+                  {isAr ? demoFileManagement.label_ar : demoFileManagement.label_en} <code>({demoFileManagement.userID})</code>
                 </button>
 
                 <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.departments")}</strong>
                 {demoReviewers.map((acc) => (
                   <button
                     type="button"
-                    key={acc.username}
+                    key={acc.userID}
                     onClick={() => fillDemo(acc)}
                     className="login-demo-account-btn"
                     style={demoAccountButtonStyle}
                   >
-                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.username})</code>
+                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.userID})</code>
                   </button>
                 ))}
 

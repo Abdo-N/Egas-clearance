@@ -1,20 +1,37 @@
 const mongoose = require("mongoose");
 
 /**
- * Snapshot of one checklist item's state for THIS request. We copy the
- * department's template into the request at creation time (see
- * requests.routes.js createRequest) so later edits to a Department's
- * template never change requests that are already in flight.
+ * Evidence a reviewer uploaded when signing -- a photo/PDF of the physical
+ * signature or stamp, captured fresh per request (see multer config in
+ * request.routes.js). Stored on disk under backend/uploads/, this just
+ * tracks where + what it is.
+ */
+const evidenceSchema = new mongoose.Schema(
+  {
+    fileUrl: { type: String, required: true }, // served via GET /requests/:id/evidence/...
+    mimeType: { type: String, required: true },
+    originalName: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+/**
+ * Snapshot of one IT checklist item's sign-off state for THIS request. We
+ * copy Department("it").checklistItems into the request at creation time so
+ * later template edits don't retroactively change requests already in
+ * flight -- same snapshot pattern as `departments` below.
  */
 const requestItemSchema = new mongoose.Schema(
   {
     key: { type: String, required: true },
     label_ar: { type: String, required: true },
     label_en: { type: String, required: true },
-    order: { type: Number, required: true },
-    checked: { type: Boolean, default: false },
-    checkedBy: { type: String, default: null }, // username of reviewer
-    checkedAt: { type: Date, default: null },
+    assignedItemKey: { type: String, required: true }, // == key, kept for symmetry with User.assignedItemKey
+    status: { type: String, enum: ["pending", "completed"], default: "pending" },
+    signedByUserID: { type: String, default: null },
+    signedByFullName: { type: String, default: null },
+    signedAt: { type: Date, default: null },
+    evidence: { type: evidenceSchema, default: null },
   },
   { _id: false }
 );
@@ -24,45 +41,50 @@ const requestDepartmentSchema = new mongoose.Schema(
     departmentKey: { type: String, required: true },
     name_ar: { type: String, required: true },
     name_en: { type: String, required: true },
-    isFinal: { type: Boolean, default: false },
-    // "rejected" means the department found something unresolved (e.g. an
-    // outstanding item) and blocked clearance -- see request.routes.js's
-    // PATCH .../reject. It overrides pending/completed until a reviewer or
-    // admin clears it.
-    status: { type: String, enum: ["pending", "completed", "rejected"], default: "pending" },
+    // Paper-form row number (1-13) -- see backend/src/services/clearancePdf.js,
+    // which maps this straight to a hand-calibrated row on the scanned template.
+    order: { type: Number, required: true },
+    tier: { type: Number, required: true },
+    hasOversightDashboard: { type: Boolean, default: false },
+    signatureMode: { type: String, enum: ["single", "itemized"], required: true },
+    status: { type: String, enum: ["pending", "completed"], default: "pending" },
+    // Single-mode fields (unused when signatureMode === "itemized"):
+    signedByUserID: { type: String, default: null },
+    signedByFullName: { type: String, default: null },
+    signedAt: { type: Date, default: null },
+    evidence: { type: evidenceSchema, default: null },
+    // Itemized-mode fields (IT only):
     items: { type: [requestItemSchema], default: [] },
-    completedAt: { type: Date, default: null },
-    rejectedReason: { type: String, default: null },
-    rejectedBy: { type: String, default: null }, // username of reviewer/admin
-    rejectedAt: { type: Date, default: null },
   },
   { _id: false }
 );
 
 // Why the employee is leaving. "retirement" covers Egypt's mandatory
-// retirement-at-60 policy, referred to as "المعاش" -- see request.routes.js
-// for the values accepted from the submission form.
+// retirement-at-60 policy, referred to as "المعاش".
 const LEAVING_REASONS = ["resignation", "new_job", "retirement"];
 
 const clearanceRequestSchema = new mongoose.Schema(
   {
-    employeeUsername: { type: String, required: true },
+    // Snapshotted from Employee at submission (see POST / in
+    // request.routes.js) so it doesn't drift if the employee's directory
+    // record changes later.
+    employeeNumber: { type: String, required: true },
     employeeFullName: { type: String, required: true },
-    // Snapshotted from User.employeeMeta at submission (see POST / in
-    // request.routes.js) -- which EGAS department the employee actually
-    // works in, NOT one of the 13 clearance departments in `departments`
-    // below. Shown to reviewers so they have context on who they're
-    // clearing, instead of just re-showing the clearance department whose
-    // checklist they're already looking at.
+    employeeJobTitle: { type: String, default: "" },
     employeeDepartment_ar: { type: String, default: "" },
     employeeDepartment_en: { type: String, default: "" },
     reason: { type: String, enum: LEAVING_REASONS, required: true },
     lastWorkingDay: { type: Date, required: true },
-    // Mirrors the "any department rejected?" state across all departments --
-    // see computeOverallStatus() in request.routes.js.
-    status: { type: String, enum: ["in_progress", "completed", "rejected"], default: "in_progress" },
+    // Which File Management user filed this request.
+    createdByUserID: { type: String, required: true },
+    status: { type: String, enum: ["in_progress", "completed"], default: "in_progress" },
     departments: { type: [requestDepartmentSchema], default: [] },
     completedAt: { type: Date, default: null },
+    // Set only by the explicit IT "Delete from Active Directory" action
+    // (POST /:id/archive-ad), never implicitly on completion.
+    archivedFromAD: { type: Boolean, default: false },
+    archivedAt: { type: Date, default: null },
+    archivedByUserID: { type: String, default: null },
   },
   { timestamps: true }
 );

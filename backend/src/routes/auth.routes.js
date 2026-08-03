@@ -2,6 +2,8 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Department = require("../models/Department");
+const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
 
@@ -13,24 +15,35 @@ const router = express.Router();
  * call and leave everything downstream (JWT issuing, requireAuth, roles)
  * untouched.
  */
-router.post("/login", async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "username and password are required" });
+router.post("/login", asyncHandler(async (req, res) => {
+  const { userID, password } = req.body;
+  if (!userID || !password) {
+    return res.status(400).json({ error: "userID and password are required" });
   }
 
-  const user = await User.findOne({ username: username.trim() });
-  if (!user) return res.status(401).json({ error: "Invalid username or password" });
+  const user = await User.findOne({ userID: userID.trim() });
+  if (!user) return res.status(401).json({ error: "Invalid user ID or password" });
 
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Invalid username or password" });
+  if (!ok) return res.status(401).json({ error: "Invalid user ID or password" });
+
+  // Reviewers get their department's hasOversightDashboard flag embedded in
+  // the token so route/UI logic never has to hardcode which department keys
+  // (wages, finance) get the oversight dashboard -- that's config on
+  // Department, looked up once here.
+  let hasOversightDashboard = false;
+  if (user.role === "reviewer" && user.departmentKey) {
+    const dept = await Department.findOne({ key: user.departmentKey });
+    hasOversightDashboard = Boolean(dept?.hasOversightDashboard);
+  }
 
   const payload = {
-    username: user.username,
+    userID: user.userID,
     fullName: user.fullName,
     role: user.role,
     departmentKey: user.departmentKey,
-    employeeMeta: user.employeeMeta,
+    assignedItemKey: user.assignedItemKey,
+    hasOversightDashboard,
   };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -38,6 +51,6 @@ router.post("/login", async (req, res) => {
   });
 
   res.json({ token, user: payload });
-});
+}));
 
 module.exports = router;
