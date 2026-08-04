@@ -423,7 +423,7 @@ export default function DepartmentDashboard({ requests, user }) {
                     <span className={`badge ${status === "completed" ? "completed" : "pending"}`}>
                       {status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
                     </span>
-                    {request.archivedFromAD && (isIT || isOversight) && (
+                    {request.archivedFromAD && (isIT || useCompanyStats) && (
                       <span className="badge archived">{t("common.archivedFromAdBadge")}</span>
                     )}
                     <small className="activity-list-date">

@@ -39,27 +39,38 @@ const PDF_RASTER_SCALE = 3;
 
 async function rasterizePdfPage(bytes) {
   const pdfjsLib = await getPdfjsLib();
-  const doc = await pdfjsLib.getDocument({
+  // .destroy() lives on the loading task, not the PDFDocumentProxy .promise
+  // resolves to -- keep the task itself so it can be cleaned up below.
+  const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(bytes),
     disableWorker: true,
     standardFontDataUrl: STANDARD_FONT_DATA_URL,
-  }).promise;
-  const page = await doc.getPage(1);
-  const viewport = page.getViewport({ scale: PDF_RASTER_SCALE });
-  const width = Math.ceil(viewport.width);
-  const height = Math.ceil(viewport.height);
+  });
+  try {
+    const doc = await loadingTask.promise;
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: PDF_RASTER_SCALE });
+    const width = Math.ceil(viewport.width);
+    const height = Math.ceil(viewport.height);
 
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  // pdfjs paints the page's own white background as part of rendering (a
-  // PDF page has no inherent background otherwise), so the result comes out
-  // already opaque white behind the ink -- same starting point as a decoded
-  // photo, which is what lets this feed straight into
-  // stripNearWhiteBackground below.
-  await page.render({ canvasContext: ctx, viewport }).promise;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+    // pdfjs paints the page's own white background as part of rendering (a
+    // PDF page has no inherent background otherwise), so the result comes out
+    // already opaque white behind the ink -- same starting point as a decoded
+    // photo, which is what lets this feed straight into
+    // stripNearWhiteBackground below.
+    await page.render({ canvasContext: ctx, viewport }).promise;
 
-  const { data } = ctx.getImageData(0, 0, width, height);
-  return { width, height, data: Buffer.from(data.buffer, data.byteOffset, data.byteLength) };
+    const { data } = ctx.getImageData(0, 0, width, height);
+    return { width, height, data: Buffer.from(data.buffer, data.byteOffset, data.byteLength) };
+  } finally {
+    // Without this, each rasterized PDF's decoded fonts/streams stay
+    // resident for the life of the process -- generateClearancePdf can call
+    // this once per signed department per request, so a long-running server
+    // handling many PDF downloads would otherwise grow unbounded.
+    await loadingTask.destroy();
+  }
 }
 
 /**

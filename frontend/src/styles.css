@@ -892,10 +892,6 @@ p {
   color: var(--rose-600);
 }
 
-.dept-stat-tile--archived strong {
-  color: var(--indigo-600);
-}
-
 .request-row-info {
   display: flex;
   flex-direction: column;
