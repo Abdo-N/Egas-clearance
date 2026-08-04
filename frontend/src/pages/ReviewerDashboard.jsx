@@ -106,6 +106,7 @@ export default function ReviewerDashboard() {
   const [selectedId, setSelectedId] = useState(null);
   const [signing, setSigning] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const isOversight = Boolean(user.hasOversightDashboard);
   const isIT = user.departmentKey === "it";
@@ -154,6 +155,30 @@ export default function ReviewerDashboard() {
     }
   }
 
+  // Undo MY OWN just-signed department/item (e.g. uploaded the wrong file by
+  // mistake) -- same backend routes as File Management's reopen
+  // (POST .../reopen, .../items/:itemKey/reopen), just called with the
+  // reviewer's own token instead of File Management's. The backend tells the
+  // two apart by role and re-checks ownership either way, so this is not a
+  // client-side-only restriction. Throws (rather than alert()ing like
+  // handleSign/handleArchive above) so ReauthConfirmButton can show the
+  // error inline next to the password field instead of a jarring popup.
+  async function handleUndo({ itemKey, password }) {
+    if (!selected || !myDept) return;
+    setUndoing(true);
+    try {
+      const url = itemKey
+        ? `/requests/${selected._id}/departments/${myDept.departmentKey}/items/${itemKey}/reopen`
+        : `/requests/${selected._id}/departments/${myDept.departmentKey}/reopen`;
+      await client.post(url, { password });
+      await reload(selected._id);
+    } catch (err) {
+      throw new Error(err.response?.data?.error || t("signature.error"));
+    } finally {
+      setUndoing(false);
+    }
+  }
+
   async function handleArchive(password) {
     if (!selected) return;
     setArchiving(true);
@@ -189,7 +214,7 @@ export default function ReviewerDashboard() {
           {!selected && (
             <>
               <div className="page-heading">
-                <h1>{t("reviewer.title")}</h1>
+                <h1>{isAr ? user.departmentName_ar : user.departmentName_en}</h1>
               </div>
               {loading && <p>{t("common.loading")}</p>}
               {!loading && requests.length === 0 && <p>{t("reviewer.empty")}</p>}
@@ -259,7 +284,13 @@ export default function ReviewerDashboard() {
 
               {myDept &&
                 (isDeptUnlocked(selected, myDept) ? (
-                  <SignaturePanel department={myDept} user={user} onSign={handleSign} busy={signing} />
+                  <SignaturePanel
+                    department={myDept}
+                    user={user}
+                    onSign={handleSign}
+                    busy={signing}
+                    onUndo={!selected.archivedFromAD ? handleUndo : undefined}
+                  />
                 ) : (
                   <div className="rejection-banner">
                     <strong>{t("reviewer.departmentLockedTitle")}</strong>
@@ -277,9 +308,22 @@ export default function ReviewerDashboard() {
                   // rule, the request only reads as "completed" once IT has
                   // actually deleted the employee from AD, which would make
                   // this button impossible to ever reach. `readyForAdDeletion`
-                  // is the "every department has signed" signal on its own.
-                  selected.readyForAdDeletion && (
+                  // now requires every department signed AND File
+                  // Management's explicit approval (see request.routes.js).
+                  selected.readyForAdDeletion ? (
                     <ArchiveAdForm onSubmit={handleArchive} busy={archiving} t={t} />
+                  ) : (
+                    // Distinguishes "not everyone's signed yet" (no note --
+                    // IT just sees the locked/awaiting state above) from
+                    // "signed, but File Management hasn't reviewed it yet" --
+                    // without this IT has no way to tell those apart, since
+                    // they never see other departments' status.
+                    selected.awaitingFileManagementApproval && (
+                      <div className="rejection-banner">
+                        <strong>{t("reviewer.awaitingFileManagementApprovalTitle")}</strong>
+                        <p>{t("reviewer.awaitingFileManagementApprovalBody")}</p>
+                      </div>
+                    )
                   )
                 ))}
             </>

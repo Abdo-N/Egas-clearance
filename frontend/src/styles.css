@@ -1077,6 +1077,58 @@ p {
   flex-basis: 100%;
 }
 
+.oversight-grid-items {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  flex-basis: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.oversight-grid-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted, #f7f7f5);
+}
+
+.inline-reauth-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inline-reauth-form input[type="password"] {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.evidence-preview-link {
+  display: inline-flex;
+  align-items: center;
+}
+
+.evidence-preview-thumb {
+  height: 44px;
+  width: auto;
+  max-width: 80px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.evidence-preview-loading {
+  color: var(--ink-500);
+}
+
 /* ---------- Employee picker (File Management: search + select) ---------- */
 
 .employee-picker-search {

@@ -14,6 +14,58 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Every one of the 13 departments has signed -- doesn't mean approved or
+// archived yet, just that there's nothing left to reopen except in response
+// to a legibility problem. Derived from the summary departments array (each
+// entry only carries `status`, matching File Management's high-level view).
+function isFullySigned(request) {
+  return request.departments.every((d) => d.status === "completed");
+}
+
+// File Management's explicit "I reviewed the signed form, it's OK" gate --
+// same re-authentication pattern as signing/archive-ad. Only shown once
+// every department has signed and only until it's given (see
+// awaitingFileManagementApproval on the request).
+function ApproveControl({ onConfirm, t }) {
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(password);
+      setPassword("");
+    } catch (err) {
+      setError(err.message || t("fileManagement.approveError"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="signature-form" onSubmit={handleSubmit}>
+      <p>{t("fileManagement.approveHint")}</p>
+      <div className="form-group">
+        <label>{t("signature.passwordLabel")}</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          required
+        />
+      </div>
+      <button type="submit" className="primary-button" disabled={submitting || !password}>
+        {submitting ? t("fileManagement.approving") : t("fileManagement.approveButton")}
+      </button>
+      {error && <p className="login-error">{error}</p>}
+    </form>
+  );
+}
+
 export default function FileManagementDashboard() {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
@@ -69,6 +121,33 @@ export default function FileManagementDashboard() {
       alert(t("fileManagement.pdfError"));
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function handleReopenDepartment(requestId, deptKey, password) {
+    try {
+      await client.post(`/requests/${requestId}/departments/${deptKey}/reopen`, { password });
+      await loadRequests();
+    } catch (err) {
+      throw new Error(err.response?.data?.error || t("fileManagement.reopenError"));
+    }
+  }
+
+  async function handleReopenItem(requestId, deptKey, itemKey, password) {
+    try {
+      await client.post(`/requests/${requestId}/departments/${deptKey}/items/${itemKey}/reopen`, { password });
+      await loadRequests();
+    } catch (err) {
+      throw new Error(err.response?.data?.error || t("fileManagement.reopenError"));
+    }
+  }
+
+  async function handleApprove(requestId, password) {
+    try {
+      await client.post(`/requests/${requestId}/approve-ad-deletion`, { password });
+      await loadRequests();
+    } catch (err) {
+      throw new Error(err.response?.data?.error || t("fileManagement.approveError"));
     }
   }
 
@@ -158,27 +237,32 @@ export default function FileManagementDashboard() {
                   <span>
                     {r.employeeFullName} <small>#{r.employeeNumber}</small>
                   </span>
-                  {r.status !== "completed" && r.readyForAdDeletion ? (
+                  {r.status === "completed" ? (
+                    <span className="badge completed">{t("employee.statusCompleted")}</span>
+                  ) : r.readyForAdDeletion ? (
                     <span className="badge awaiting">{t("common.awaitingAdDeletionBadge")}</span>
+                  ) : r.awaitingFileManagementApproval ? (
+                    <span className="badge awaiting">{t("common.awaitingApprovalBadge")}</span>
                   ) : (
-                    <span className={`badge ${r.status === "completed" ? "completed" : "pending"}`}>
-                      {r.status === "completed" ? t("employee.statusCompleted") : t("employee.statusInProgress")}
-                    </span>
+                    <span className="badge pending">{t("employee.statusInProgress")}</span>
                   )}
-                  {r.archivedFromAD && <span className="badge archived">{t("common.archivedFromAdBadge")}</span>}
                   <button
                     className="secondary-button"
                     onClick={() => setExpandedId(expandedId === r._id ? null : r._id)}
                   >
                     {expandedId === r._id ? t("fileManagement.hideDetails") : t("fileManagement.viewDetails")}
                   </button>
-                  {r.status === "completed" && (
+                  {isFullySigned(r) && (
                     <button
                       className="secondary-button"
                       disabled={downloadingId === r._id}
                       onClick={() => handleDownloadPdf(r._id)}
                     >
-                      {downloadingId === r._id ? t("common.loading") : t("fileManagement.downloadPdf")}
+                      {downloadingId === r._id
+                        ? t("common.loading")
+                        : r.status === "completed"
+                        ? t("fileManagement.downloadPdf")
+                        : t("fileManagement.previewPdf")}
                     </button>
                   )}
                 </div>
@@ -199,7 +283,28 @@ export default function FileManagementDashboard() {
                         <strong>{formatDate(r.createdAt, i18n.language)}</strong>
                       </div>
                     </div>
-                    <RequestOversightGrid request={r} detail="summary" />
+                    <RequestOversightGrid
+                      request={r}
+                      detail="summary"
+                      onReopenDepartment={
+                        !r.archivedFromAD
+                          ? (deptKey, password) => handleReopenDepartment(r._id, deptKey, password)
+                          : undefined
+                      }
+                      onReopenItem={
+                        !r.archivedFromAD
+                          ? (deptKey, itemKey, password) => handleReopenItem(r._id, deptKey, itemKey, password)
+                          : undefined
+                      }
+                    />
+                    {r.awaitingFileManagementApproval && (
+                      <ApproveControl t={t} onConfirm={(password) => handleApprove(r._id, password)} />
+                    )}
+                    {r.readyForAdDeletion && !r.archivedFromAD && (
+                      <div className="success-banner">
+                        <strong>{t("fileManagement.approvedNote")}</strong>
+                      </div>
+                    )}
                   </div>
                 )}
               </li>

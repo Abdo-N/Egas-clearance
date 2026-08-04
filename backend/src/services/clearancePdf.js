@@ -2,27 +2,89 @@ const fs = require("fs");
 const path = require("path");
 const { PNG } = require("pngjs");
 const jpeg = require("jpeg-js");
+const { createCanvas } = require("@napi-rs/canvas");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 const TEMPLATE_PATH = path.resolve(__dirname, "../../assets/clearance-form-template.pdf");
 const UPLOAD_ROOT = path.resolve(__dirname, "../../uploads");
 
+// pdfjs-dist ships ESM-only (no CommonJS build) as of v6 -- loaded via a
+// cached dynamic import so every call site can just `await` this instead of
+// re-importing. Only needed for PDF evidence (see rasterizePdfPage below).
+let pdfjsLibPromise = null;
+function getPdfjsLib() {
+  if (!pdfjsLibPromise) pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+  return pdfjsLibPromise;
+}
+
+// Without this, pdfjs falls back to generic glyph metrics for the 14
+// standard PDF fonts (Helvetica, etc.) whenever a PDF references one by name
+// instead of embedding it -- common for text-based signature exports (e.g.
+// a typed name from an e-signature tool) -- and letters render with visibly
+// wrong spacing/kerning. Ships inside the package itself, no extra download.
+const STANDARD_FONT_DATA_URL = path.join(path.dirname(require.resolve("pdfjs-dist/package.json")), "standard_fonts") + path.sep;
+
+// A signature uploaded as a PDF (a scanned/exported signature page, not a
+// photo) -- this is actually the common case in practice, more so than a
+// phone photo. Rasterizes the first page to RGBA pixels so it can go through
+// exactly the same white-background-stripping treatment as a photo (see
+// stripNearWhiteBackground below) instead of embedding it as an opaque
+// vector block -- a scanned page's background isn't always perfectly pure
+// white, and treating every evidence type the same way is simpler than
+// maintaining two different compositing paths. Scale 3 (~216 "dpi"
+// equivalent, since PDF units are 72/inch) keeps ink crisp after the
+// eventual scale-down into the small signature cell without rendering at
+// print resolution for something that ends up a couple centimeters tall.
+const PDF_RASTER_SCALE = 3;
+
+async function rasterizePdfPage(bytes) {
+  const pdfjsLib = await getPdfjsLib();
+  const doc = await pdfjsLib.getDocument({
+    data: new Uint8Array(bytes),
+    disableWorker: true,
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+  }).promise;
+  const page = await doc.getPage(1);
+  const viewport = page.getViewport({ scale: PDF_RASTER_SCALE });
+  const width = Math.ceil(viewport.width);
+  const height = Math.ceil(viewport.height);
+
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  // pdfjs paints the page's own white background as part of rendering (a
+  // PDF page has no inherent background otherwise), so the result comes out
+  // already opaque white behind the ink -- same starting point as a decoded
+  // photo, which is what lets this feed straight into
+  // stripNearWhiteBackground below.
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  const { data } = ctx.getImageData(0, 0, width, height);
+  return { width, height, data: Buffer.from(data.buffer, data.byteOffset, data.byteLength) };
+}
+
 /**
  * Hand-calibrated against backend/assets/clearance-form-template.pdf (the
- * scanned "إخلاء طرف" paper form, single page, 1708x2616pt). Row keys match
+ * "إخلاء طرف" paper form, single page, A4 595.32x841.92pt -- this is a native
+ * Word-exported PDF, not a scan, so the grid lines are real vector strokes
+ * rather than pixels to eyeball). Row keys match
  * `ClearanceRequest.departments[].order` (1-13, same as the paper's row
- * numbers top-to-bottom). Derived from just the table's outer top edge
- * (row 1's top, 1781.3pt) and a single row height (85.8pt), rather than 13
- * independently-eyeballed row boundaries -- an earlier per-row estimate
- * (81.3pt) was close at the top but drifted about half a row off by row 13,
- * confirmed by overlaying debug rectangles on the actual scan and comparing
- * against the real grid lines. Re-derive both numbers the same way (render
- * at 300dpi, overlay red boxes at candidate coordinates, compare against the
- * real top and bottom table borders, adjust row height until both ends
- * line up) if a different/cleaner scan ever replaces this template.
+ * numbers top-to-bottom). Derived from the table's outer top edge (row 1's
+ * top, 526.2pt) and a single row height (26.465pt) rather than 13
+ * independently-measured row boundaries -- same reasoning as before
+ * (see git history for the previous scanned template): one deliberately
+ * shorter row (#7, "تنمية الموارد البشرية", ~23.5pt instead of ~26.5pt in
+ * the source document) would otherwise throw off a per-row lookup, and a
+ * uniform height keeps every row close rather than compounding drift.
+ * Re-derive both numbers if a different template ever replaces this one:
+ * render at high DPI (`pdftoppm -r 300 -png`), binarize, and find rows/
+ * columns whose pixels are dark across most of the table width/height
+ * (grid lines are solid across a whole row/column; text is not) -- then
+ * convert the topmost row-divider's pixel position to PDF points (pt =
+ * px * 72 / dpi) and subtract from the page height, since pdf-lib draws
+ * bottom-up while image rows count top-down.
  */
-const TABLE_TOP = 1781.3;
-const ROW_HEIGHT = 85.8;
+const TABLE_TOP = 526.2;
+const ROW_HEIGHT = 26.465;
 const ROWS = {};
 for (let i = 1; i <= 13; i++) {
   const yTop = TABLE_TOP - (i - 1) * ROW_HEIGHT;
@@ -35,12 +97,58 @@ for (let i = 1; i <= 13; i++) {
 // clearance it is), the evidence photo goes in the middle ("التوقيع")
 // column, and the right ("البيان") column is deliberately left blank.
 const COLUMNS = {
-  name: { x: 196.2, width: 562.5 - 196.2 },
-  signature: { x: 562.5, width: 771.9 - 562.5 },
+  name: { x: 90.24, width: 186.6 - 90.24 },
+  signature: { x: 186.6, width: 283.56 - 186.6 },
 };
 
 const CELL_PADDING = 6;
 const IMAGE_PADDING = 2;
+
+const WHITE = 235; // pixels this light or lighter count as "background", not ink
+const INK = 180; // pixels this dark or darker stay fully opaque when stripping the background
+
+// Trims the RGBA buffer down to the bounding box of non-near-white content,
+// plus a small margin. Evidence that's a whole scanned/exported page --
+// common for a PDF upload, where the actual ink might occupy only a small
+// portion of an A4 sheet -- would otherwise scale down to an illegible
+// sliver just because the page's own empty margin has to shrink along with
+// it to fit the signature cell. Uses the same WHITE threshold as
+// stripNearWhiteBackground below so "what counts as content" is consistent
+// between the two. Falls back to the untrimmed image if nothing dark enough
+// is found (a blank or corrupt page) rather than producing a zero-size crop.
+function cropToContent({ width, height, data }) {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (Math.min(data[i], data[i + 1], data[i + 2]) < WHITE) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return { width, height, data };
+
+  const margin = Math.max(3, Math.round(Math.max(width, height) * 0.015));
+  minX = Math.max(0, minX - margin);
+  minY = Math.max(0, minY - margin);
+  maxX = Math.min(width - 1, maxX + margin);
+  maxY = Math.min(height - 1, maxY + margin);
+
+  const cropWidth = maxX - minX + 1;
+  const cropHeight = maxY - minY + 1;
+  const cropped = Buffer.alloc(cropWidth * cropHeight * 4);
+  for (let y = 0; y < cropHeight; y++) {
+    const srcStart = ((minY + y) * width + minX) * 4;
+    data.copy(cropped, y * cropWidth * 4, srcStart, srcStart + cropWidth * 4);
+  }
+  return { width: cropWidth, height: cropHeight, data: cropped };
+}
 
 // A real evidence photo is a signature photographed/scanned on plain paper --
 // it has a white/off-white background, not transparency, so embedding it
@@ -51,8 +159,6 @@ const IMAGE_PADDING = 2;
 // as PNG so pdf-lib can embed it with transparency regardless of the
 // original upload format.
 function stripNearWhiteBackground({ width, height, data }) {
-  const WHITE = 235; // pixels this light or lighter become fully transparent
-  const INK = 180; // pixels this dark or darker stay fully opaque
   for (let i = 0; i < data.length; i += 4) {
     const minChannel = Math.min(data[i], data[i + 1], data[i + 2]);
     let alpha;
@@ -66,7 +172,14 @@ function stripNearWhiteBackground({ width, height, data }) {
   return PNG.sync.write(png);
 }
 
-function decodeToRgba(bytes, mimeType) {
+// Decodes whatever evidence format was uploaded to raw RGBA pixels so it can
+// all go through the same stripNearWhiteBackground -> embedPng pipeline
+// below, regardless of source format. webp is accepted on upload (see the
+// multer fileFilter in request.routes.js) and stays servable via
+// GET .../evidence, but isn't handled here -- not worth a 4th decoder for
+// what should be a rare upload choice next to a photo or PDF.
+async function decodeEvidenceToRgba(bytes, mimeType) {
+  if (/^application\/pdf$/i.test(mimeType)) return rasterizePdfPage(bytes);
   if (/png/i.test(mimeType)) {
     const png = PNG.sync.read(bytes);
     return { width: png.width, height: png.height, data: png.data };
@@ -75,36 +188,17 @@ function decodeToRgba(bytes, mimeType) {
   return { width: decoded.width, height: decoded.height, data: Buffer.from(decoded.data) };
 }
 
-async function drawEvidenceImage(pdfDoc, page, evidence, row) {
-  const absolutePath = path.join(UPLOAD_ROOT, evidence.fileUrl);
-  if (!fs.existsSync(absolutePath)) return;
-
-  // Only image evidence gets composited into the signature cell -- a PDF
-  // upload is still stored/servable via GET .../evidence, but embedding an
-  // arbitrary uploaded PDF's page into this one is out of scope for v1.
-  if (!/^image\/(jpe?g|png)$/i.test(evidence.mimeType)) return;
-
-  const bytes = fs.readFileSync(absolutePath);
-  let image;
-  try {
-    const rgba = decodeToRgba(bytes, evidence.mimeType);
-    const transparentPng = stripNearWhiteBackground(rgba);
-    image = await pdfDoc.embedPng(transparentPng);
-  } catch (err) {
-    // A corrupt/truncated upload shouldn't take down PDF generation for the
-    // whole request -- just skip embedding this row's image.
-    console.error(`[clearancePdf] failed to embed evidence image at ${absolutePath}:`, err.message);
-    return;
-  }
-
+// Scales an embedded pdf-lib PDFImage to fit inside the signature cell,
+// aspect-ratio preserved and centered, then draws it. No upscale cap -- fill
+// as much of the cell as the aspect ratio allows. Evidence is typically much
+// higher-resolution than the cell needs anyway (phone camera photo, or a
+// rasterized PDF page, vs. an ~26pt-tall box), but small synthetic test
+// images should still grow to fill the space rather than sit tiny in a
+// corner.
+function drawScaledIntoSignatureCell(page, image, row) {
   const cell = COLUMNS.signature;
   const maxWidth = cell.width - IMAGE_PADDING * 2;
   const maxHeight = row.yTop - row.yBottom - IMAGE_PADDING * 2;
-  // No upscale cap -- fill as much of the cell as the aspect ratio allows.
-  // Evidence photos are typically much higher-resolution than the cell
-  // needs anyway (phone camera vs. an ~80pt-tall box), but small synthetic
-  // test images should still grow to fill the space rather than sit tiny
-  // in a corner.
   const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
   const width = image.width * scale;
   const height = image.height * scale;
@@ -115,6 +209,28 @@ async function drawEvidenceImage(pdfDoc, page, evidence, row) {
     width,
     height,
   });
+}
+
+async function drawEvidenceImage(pdfDoc, page, evidence, row) {
+  const absolutePath = path.join(UPLOAD_ROOT, evidence.fileUrl);
+  if (!fs.existsSync(absolutePath)) return;
+
+  if (!/^(image\/(jpe?g|png)|application\/pdf)$/i.test(evidence.mimeType)) return;
+
+  const bytes = fs.readFileSync(absolutePath);
+  let image;
+  try {
+    const rgba = await decodeEvidenceToRgba(bytes, evidence.mimeType);
+    const transparentPng = stripNearWhiteBackground(cropToContent(rgba));
+    image = await pdfDoc.embedPng(transparentPng);
+  } catch (err) {
+    // A corrupt/truncated/password-protected upload shouldn't take down PDF
+    // generation for the whole request -- just skip embedding this row.
+    console.error(`[clearancePdf] failed to embed evidence at ${absolutePath}:`, err.message);
+    return;
+  }
+
+  drawScaledIntoSignatureCell(page, image, row);
 }
 
 // Centered both ways in the cell, and shrinks to fit before it ever

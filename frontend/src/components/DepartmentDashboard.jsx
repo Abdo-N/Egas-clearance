@@ -78,7 +78,6 @@ function computeOwnStats(requests, departmentKey) {
   const overdueCount = pendingEntries.filter(
     (e) => (now - new Date(e.request.createdAt)) / MS_PER_DAY > OVERDUE_DAYS
   ).length;
-  const archivedCount = entries.filter((e) => e.request.archivedFromAD).length;
 
   const turnarounds = completedEntries
     .map((e) => {
@@ -112,7 +111,6 @@ function computeOwnStats(requests, departmentKey) {
     completedCount: completedEntries.length,
     pendingCount: pendingEntries.length,
     overdueCount,
-    archivedCount,
     avgTurnaround,
     byReason,
     monthKeys,
@@ -149,7 +147,6 @@ function computeCompanyStats(requests) {
   const overdueCount = requests.filter(
     (r) => r.status !== "completed" && (now - new Date(r.createdAt)) / MS_PER_DAY > OVERDUE_DAYS
   ).length;
-  const archivedCount = requests.filter((r) => r.archivedFromAD).length;
   const turnarounds = completed
     .filter((r) => r.completedAt)
     .map((r) => (new Date(r.completedAt) - new Date(r.createdAt)) / MS_PER_DAY);
@@ -190,7 +187,6 @@ function computeCompanyStats(requests) {
     completedCount: completed.length,
     inProgressCount: requests.length - completed.length,
     overdueCount,
-    archivedCount,
     avgTurnaround,
     byReason,
     monthKeys,
@@ -296,7 +292,6 @@ export default function DepartmentDashboard({ requests, user }) {
 
   return (
     <div className="analytics-dashboard">
-      <h2 className="request-list-section-title">{t("reviewer.dashboardTitle")}</h2>
       {useCompanyStats && <p className="analytics-dashboard-subtitle">{t("reviewer.dashboardCompanyOverview")}</p>}
 
       <div className="dept-stats-row">
@@ -317,9 +312,6 @@ export default function DepartmentDashboard({ requests, user }) {
           label={t("reviewer.dashboardAvgTurnaround")}
         />
         <StatTile value={stats.overdueCount} label={t("reviewer.dashboardOverdue")} tone={stats.overdueCount > 0 ? "overdue" : undefined} />
-        {(isIT || useCompanyStats) && (
-          <StatTile value={stats.archivedCount} label={t("common.archivedFromAdBadge")} tone="archived" />
-        )}
       </div>
 
       <div className="analytics-grid">
@@ -431,7 +423,7 @@ export default function DepartmentDashboard({ requests, user }) {
                     <span className={`badge ${status === "completed" ? "completed" : "pending"}`}>
                       {status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
                     </span>
-                    {request.archivedFromAD && (isIT || useCompanyStats) && (
+                    {request.archivedFromAD && (isIT || isOversight) && (
                       <span className="badge archived">{t("common.archivedFromAdBadge")}</span>
                     )}
                     <small className="activity-list-date">

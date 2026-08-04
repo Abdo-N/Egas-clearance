@@ -28,7 +28,7 @@ export const demoReviewers = [
   { userID: "it.mobile_data_lines.reviewer", label_en: "IT — Mobile & Data Lines", label_ar: "تكنولوجيا المعلومات — خط المحمول والداتا" },
   { userID: "it.phone.reviewer", label_en: "IT — Phone", label_ar: "تكنولوجيا المعلومات — الهاتف" },
   { userID: "it.pc_account_mailbox.reviewer", label_en: "IT — PC, Account & Mailbox", label_ar: "تكنولوجيا المعلومات — الكمبيوتر والحساب والبريد" },
-  { userID: "it.sap_service.reviewer", label_en: "IT — SAP Service", label_ar: "تكنولوجيا المعلومات — خدمة SAP" },
+  { userID: "it.sap_service.reviewer", label_en: "IT — SAP Services", label_ar: "تكنولوجيا المعلومات — خدمات SAP" },
   { userID: "it.sap_account_removal.reviewer", label_en: "IT — SAP Account Removal", label_ar: "تكنولوجيا المعلومات — إزالة حساب SAP" },
   { userID: "transport.reviewer1", label_en: "Transportation Services", label_ar: "خدمات النقل" },
   { userID: "wages.reviewer1", label_en: "Wages & Entitlements (oversight)", label_ar: "الأجور والاستحقاقات (إشراف)" },

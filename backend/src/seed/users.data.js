@@ -32,7 +32,7 @@ const IT_ITEMS = [
   { itemKey: "mobile_data_lines", label: "Mobile & Data Lines" },
   { itemKey: "phone", label: "Phone" },
   { itemKey: "pc_account_mailbox", label: "PC, Account & Mailbox" },
-  { itemKey: "sap_service", label: "SAP Service" },
+  { itemKey: "sap_service", label: "SAP Services" },
   { itemKey: "sap_account_removal", label: "SAP Account Removal" },
 ];
 

@@ -86,21 +86,35 @@ function canSeeFull(user) {
 // slice of a request, never what other departments have signed. Also tags
 // that entry with `needsAction` so the reviewer's dashboard can show "waiting
 // on you" vs "already signed" without re-deriving the rule client-side.
+// `readyForAdDeletion` now requires BOTH every department signed AND File
+// Management's explicit approval (see approve-ad-deletion route) -- neither
+// alone is enough for IT's delete button to appear. `awaitingFileManagementApproval`
+// distinguishes, for IT's own UI, "not everyone's signed yet" from "signed,
+// but File Management hasn't reviewed it yet" -- without it, IT has no way
+// to tell those two apart since they never see other departments' status.
+function adDeletionFlags(obj) {
+  const allSigned = allDepartmentsSigned(obj.departments);
+  return {
+    readyForAdDeletion: allSigned && Boolean(obj.fileManagementApproved),
+    awaitingFileManagementApproval: allSigned && !obj.fileManagementApproved && !obj.archivedFromAD,
+  };
+}
+
 function redactToOwnDepartment(request, user) {
   const obj = request.toObject ? request.toObject() : request;
-  // Computed from the full (pre-redaction) departments array -- a single
-  // yes/no flag doesn't leak which specific other departments are done, so
-  // it's safe to hand to any reviewer, but it's what IT's UI needs to know
-  // when the delete-from-AD action becomes available.
-  const readyForAdDeletion = allDepartmentsSigned(obj.departments);
+  // Computed from the full (pre-redaction) departments array -- these flags
+  // don't leak which specific other departments are done, so they're safe to
+  // hand to any reviewer, but they're what IT's UI needs to know when the
+  // delete-from-AD action becomes available.
+  const flags = adDeletionFlags(obj);
   const own = obj.departments.find((d) => d.departmentKey === user.departmentKey);
-  if (!own) return { ...obj, departments: [], readyForAdDeletion };
+  if (!own) return { ...obj, departments: [], ...flags };
   // Locked-but-still-"pending" must NOT read as needsAction=true -- matters
   // for oversight reviewers (see withOwnDepartmentAnnotated below), who see
   // every request including ones where their own tier-2 department hasn't
   // unlocked yet.
   const needsAction = isDepartmentUnlocked(obj.departments, user.departmentKey) && isPendingForReviewer(own, user);
-  return { ...obj, departments: [{ ...own, needsAction }], readyForAdDeletion };
+  return { ...obj, departments: [{ ...own, needsAction }], ...flags };
 }
 
 // Same `needsAction` tag as redactToOwnDepartment, but for oversight
@@ -111,7 +125,7 @@ function withOwnDepartmentAnnotated(request, user) {
   const obj = request.toObject ? request.toObject() : request;
   return {
     ...obj,
-    readyForAdDeletion: allDepartmentsSigned(obj.departments),
+    ...adDeletionFlags(obj),
     departments: obj.departments.map((d) => {
       if (d.departmentKey !== user.departmentKey) return d;
       const needsAction = isDepartmentUnlocked(obj.departments, user.departmentKey) && isPendingForReviewer(d, user);
@@ -121,17 +135,24 @@ function withOwnDepartmentAnnotated(request, user) {
 }
 
 // File Management's "high view": which of the 13 departments are done vs
-// still pending, with no signer identity, timestamps, or evidence -- just
-// enough to track where a request they filed is stuck.
+// still pending, with no signer identity or timestamps -- just enough to
+// track where a request they filed is stuck. Evidence itself is a
+// deliberate, narrow exception to that: as soon as a department (or IT item)
+// signs, its uploaded photo/file rides along right next to that status, the
+// same moment wages/finance oversight would see it -- File Management
+// doesn't have to wait for full completion or their own
+// approve-ad-deletion step to spot-check legibility. Still never a signer's
+// name, though.
 function summarizeForFileManagement(request) {
   const obj = request.toObject ? request.toObject() : request;
   return {
     ...obj,
     // Lets File Management's UI distinguish "still waiting on some
-    // department" from "every department signed, now just waiting on IT to
-    // delete from AD" -- both currently read as the same "in_progress"
-    // status otherwise, which is exactly what made this confusing.
-    readyForAdDeletion: allDepartmentsSigned(obj.departments),
+    // department" from "every department signed, now just waiting on File
+    // Management to approve / IT to delete from AD" -- both currently read
+    // as the same "in_progress" status otherwise, which is exactly what made
+    // this confusing.
+    ...adDeletionFlags(obj),
     departments: obj.departments.map((d) => ({
       departmentKey: d.departmentKey,
       name_ar: d.name_ar,
@@ -139,6 +160,26 @@ function summarizeForFileManagement(request) {
       order: d.order,
       tier: d.tier,
       status: d.status,
+      // RequestOversightGrid.jsx branches on this (single vs. itemized) to
+      // decide whether to show a department-level evidence preview/Reopen
+      // control or per-item ones -- omitting it here left both silently
+      // unrendered for File Management, since `undefined === "single"` is
+      // always false.
+      signatureMode: d.signatureMode,
+      evidence: d.status === "completed" ? d.evidence : undefined,
+      // Item-level status (+ evidence once that item is signed) so File
+      // Management can tell WHICH of IT's 5 items to reopen if a signature
+      // turns out unclear -- no signer identity either way.
+      items:
+        d.signatureMode === "itemized"
+          ? d.items.map((i) => ({
+              key: i.key,
+              label_ar: i.label_ar,
+              label_en: i.label_en,
+              status: i.status,
+              evidence: i.status === "completed" ? i.evidence : undefined,
+            }))
+          : undefined,
     })),
   };
 }
@@ -415,6 +456,171 @@ router.post(
   })
 );
 
+// Shared by both reopen routes below: undoes a signature and revokes any
+// File Management approval already given, since that approval was for a
+// signature set that no longer exists. Never touches the file on disk (the
+// old evidence stays there as an audit trail) -- just clears the request's
+// reference to it so the row reads as unsigned again until re-signed.
+function clearSignature(target) {
+  target.status = "pending";
+  target.signedByUserID = null;
+  target.signedByFullName = null;
+  target.signedAt = null;
+  target.evidence = null;
+}
+
+function revokeApproval(request) {
+  request.fileManagementApproved = false;
+  request.fileManagementApprovedAt = null;
+  request.fileManagementApprovedByUserID = null;
+}
+
+/**
+ * Reopen a single-signature department whose uploaded evidence turned out
+ * unclear (wrong file, illegible photo, etc.) -- resets it back to unsigned
+ * so any of that department's reviewers can sign again, same eligibility
+ * rule as the first time. Two different callers, same effect:
+ *   - FILE MANAGEMENT, for a request THEY filed -- e.g. they spotted it while
+ *     reviewing before approving AD deletion (see approve-ad-deletion below).
+ *   - The signing department's OWN reviewers (any of the 2+, not just
+ *     whoever originally signed it) -- e.g. they realize right away they
+ *     uploaded the wrong file, without needing to loop in File Management.
+ * Either way, only before the request has been archived from AD (that's the
+ * one truly final step -- see CLAUDE.md).
+ */
+router.post(
+  "/:id/departments/:deptKey/reopen",
+  requireAuth,
+  requireRole("file_management", "reviewer"),
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "'password' is required" });
+
+    const request = await ClearanceRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Not found" });
+
+    const isFilingFileManagement = req.user.role === "file_management" && request.createdByUserID === req.user.userID;
+    const isOwnDepartmentReviewer = req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey;
+    if (!isFilingFileManagement && !isOwnDepartmentReviewer) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (request.archivedFromAD) {
+      return res.status(409).json({ error: "This request has already been completed and cannot be reopened" });
+    }
+
+    const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
+    if (!dept) return res.status(404).json({ error: "Department not on this request" });
+    if (dept.signatureMode !== "single") {
+      return res.status(400).json({ error: "This department uses itemized signing -- reopen the specific item instead" });
+    }
+    if (dept.status !== "completed") return res.status(409).json({ error: "This department hasn't signed yet" });
+
+    const passwordOk = await verifyPassword(req.user.userID, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
+
+    clearSignature(dept);
+    revokeApproval(request);
+    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    await request.save();
+
+    res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
+  })
+);
+
+/**
+ * Reopen one of IT's itemized checklist items whose uploaded evidence turned
+ * out unclear. Same idea as the department-level reopen above, just scoped
+ * to one item -- if the department had completed (all 5 items signed), it
+ * goes back to "pending" too since one item is now unsigned again. Same two
+ * callers: File Management (their own filed request), or -- new -- the ONE
+ * reviewer that item is permanently assigned to (matching the same
+ * assignedItemKey check the sign route uses; unlike single-mode departments,
+ * an itemized item isn't "any of 2+ reviewers", so no other IT reviewer can
+ * undo someone else's item).
+ */
+router.post(
+  "/:id/departments/:deptKey/items/:itemKey/reopen",
+  requireAuth,
+  requireRole("file_management", "reviewer"),
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "'password' is required" });
+
+    const request = await ClearanceRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Not found" });
+
+    const isFilingFileManagement = req.user.role === "file_management" && request.createdByUserID === req.user.userID;
+    const isOwnItemReviewer = req.user.role === "reviewer" && req.user.assignedItemKey === req.params.itemKey;
+    if (!isFilingFileManagement && !isOwnItemReviewer) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (request.archivedFromAD) {
+      return res.status(409).json({ error: "This request has already been completed and cannot be reopened" });
+    }
+
+    const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
+    if (!dept) return res.status(404).json({ error: "Department not on this request" });
+    if (dept.signatureMode !== "itemized") {
+      return res.status(400).json({ error: "This department uses single signing -- reopen the department instead" });
+    }
+
+    const item = dept.items.find((i) => i.key === req.params.itemKey);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+    if (item.status !== "completed") return res.status(409).json({ error: "This item hasn't signed yet" });
+
+    const passwordOk = await verifyPassword(req.user.userID, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
+
+    clearSignature(item);
+    dept.status = "pending";
+    revokeApproval(request);
+    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    await request.save();
+
+    res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
+  })
+);
+
+/**
+ * FILE MANAGEMENT: sign off that every department's evidence has been
+ * reviewed and is legible, once all 13 have signed. This is the human
+ * checkpoint the delete-from-AD action is gated on -- IT can't delete the
+ * employee from Active Directory until File Management gives this explicit
+ * OK, in addition to every department having signed (see archive-ad below).
+ */
+router.post(
+  "/:id/approve-ad-deletion",
+  requireAuth,
+  requireRole("file_management"),
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "'password' is required" });
+
+    const request = await ClearanceRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Not found" });
+    if (request.createdByUserID !== req.user.userID) return res.status(403).json({ error: "Forbidden" });
+    if (request.archivedFromAD) {
+      return res.status(409).json({ error: "This employee has already been deleted from Active Directory" });
+    }
+    if (!allDepartmentsSigned(request.departments)) {
+      return res.status(400).json({ error: "Every department must sign before this request can be approved" });
+    }
+    if (request.fileManagementApproved) {
+      return res.status(409).json({ error: "This request has already been approved" });
+    }
+
+    const passwordOk = await verifyPassword(req.user.userID, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
+
+    request.fileManagementApproved = true;
+    request.fileManagementApprovedAt = new Date();
+    request.fileManagementApprovedByUserID = req.user.userID;
+    await request.save();
+
+    res.json(summarizeForFileManagement(request));
+  })
+);
+
 /**
  * REVIEWER (IT only): delete the employee from Active Directory. The real
  * final step of clearance -- only enabled once every one of the 13
@@ -437,6 +643,9 @@ router.post("/:id/archive-ad", requireAuth, requireRole("reviewer"), asyncHandle
 
   if (!allDepartmentsSigned(request.departments)) {
     return res.status(400).json({ error: "Every department must sign before deleting from Active Directory" });
+  }
+  if (!request.fileManagementApproved) {
+    return res.status(400).json({ error: "File Management must approve this request before deleting from Active Directory" });
   }
   if (request.archivedFromAD) {
     return res.status(409).json({ error: "This employee has already been deleted from Active Directory" });
@@ -461,15 +670,20 @@ router.post("/:id/archive-ad", requireAuth, requireRole("reviewer"), asyncHandle
   res.json(redactToOwnDepartment(request, req.user));
 }));
 
-// Streams a stored evidence file. Only oversight reviewers and the
-// department that produced it can view it -- File Management never sees
-// evidence, matching their "high view only" restriction.
+// Streams a stored evidence file. Oversight reviewers and the department
+// that produced it can always view it. File Management can too, but only
+// for a request THEY filed -- narrow, deliberate exception to their usual
+// "status only, no evidence" restriction (see summarizeForFileManagement),
+// available as soon as that department/item signs rather than waiting for
+// the whole request to finish and get approved.
 router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (req, res) => {
   const request = await ClearanceRequest.findById(req.params.id);
   if (!request) return res.status(404).json({ error: "Not found" });
 
   const canView =
-    canSeeFull(req.user) || (req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey);
+    canSeeFull(req.user) ||
+    (req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey) ||
+    (req.user.role === "file_management" && request.createdByUserID === req.user.userID);
   if (!canView) return res.status(403).json({ error: "Forbidden" });
 
   const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
@@ -485,9 +699,12 @@ router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (
 
 // Generates the composited signature PDF on demand. Oversight reviewers can
 // pull it at any time (a live preview of whatever's signed so far). File
-// Management can only pull it for a request THEY filed, and only once it's
-// fully "completed" -- the finished artifact, not a mid-process preview
-// that would otherwise leak per-department progress beyond their high view.
+// Management can only pull it for a request THEY filed, and only once every
+// department has signed -- before that it would leak per-department progress
+// beyond their high view, but once all 13 are in there's no partial picture
+// left to leak. This is also how File Management is meant to actually check
+// evidence legibility before approving AD deletion (see approve-ad-deletion
+// above) -- they never get per-department evidence any other way.
 router.get("/:id/pdf", requireAuth, requireRole("file_management", "reviewer"), asyncHandler(async (req, res) => {
   const request = await ClearanceRequest.findById(req.params.id);
   if (!request) return res.status(404).json({ error: "Not found" });
@@ -496,7 +713,7 @@ router.get("/:id/pdf", requireAuth, requireRole("file_management", "reviewer"), 
     canSeeFull(req.user) ||
     (req.user.role === "file_management" &&
       request.createdByUserID === req.user.userID &&
-      request.status === "completed");
+      allDepartmentsSigned(request.departments));
   if (!allowed) return res.status(403).json({ error: "Forbidden" });
 
   const buffer = await generateClearancePdf(request);

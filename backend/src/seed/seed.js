@@ -14,21 +14,34 @@ const employees = require("./employees.data");
 
 const UPLOAD_ROOT = path.resolve(__dirname, "../../uploads");
 const DUMMY_SIGNATURES_DIR = path.resolve(__dirname, "../../assets/dummy-signatures");
-const DUMMY_SIGNATURE_FILES = ["dummy-signature-1.png", "dummy-signature-2.png", "dummy-signature-3.png"];
+// A deliberate mix of formats -- jpg/png photos and multi-page-capable PDFs
+// (one is even a 2-page scan) -- so seeded demo requests exercise every
+// branch of clearancePdf.js's evidence compositing (image decode straight
+// through, PDF rasterized first), not just one.
+const DUMMY_SIGNATURE_FILES = [
+  "dummy-signature-1.jpg",
+  "dummy-signature-2.jpg",
+  "dummy-signature-3.pdf",
+  "dummy-signature-4.png",
+  "dummy-signature-5.pdf",
+  "dummy-signature-6.pdf",
+];
+const MIME_TYPES_BY_EXT = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".pdf": "application/pdf" };
 
-// Picks one of the 3 sample signature images (see backend/assets/dummy-signatures/)
+// Picks one of the sample signature files (see backend/assets/dummy-signatures/)
 // at random and copies it into this request's upload folder, so the demo
 // request looks like a real partially-signed clearance instead of leaving
 // every "completed" department without any evidence to composite onto the PDF.
 function planDummySignature(requestId, deptKey) {
   const source = DUMMY_SIGNATURE_FILES[Math.floor(Math.random() * DUMMY_SIGNATURE_FILES.length)];
-  const filename = `${deptKey}-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`;
+  const ext = path.extname(source);
+  const filename = `${deptKey}-${Date.now()}-${Math.floor(Math.random() * 1000)}${ext}`;
   const destDir = path.join(UPLOAD_ROOT, String(requestId));
   fs.mkdirSync(destDir, { recursive: true });
   fs.copyFileSync(path.join(DUMMY_SIGNATURES_DIR, source), path.join(destDir, filename));
   return {
     fileUrl: `${requestId}/${filename}`,
-    mimeType: "image/png",
+    mimeType: MIME_TYPES_BY_EXT[ext],
     originalName: source,
   };
 }

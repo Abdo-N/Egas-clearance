@@ -20,16 +20,18 @@ from AD is the real final step, not a formality after the fact, so the
 request only reads as "completed" once IT has done that too.
 
 The real department list and paper-form order are in
-`backend/assets/clearance-form-template.pdf` (the scanned "إخلاء طرف" form) and
-mirrored in `backend/src/seed/departments.data.js`. This file only covers how
-the codebase is organized.
+`backend/assets/clearance-form-template.pdf` (a digital copy of the "إخلاء
+طرف" form, currently a native Word-exported PDF rather than a scan — see
+"Compositing signatures onto the paper form" below) and mirrored in
+`backend/src/seed/departments.data.js`. This file only covers how the
+codebase is organized.
 
 ## Stack
 
 - Backend: Node.js + Express + MongoDB (Mongoose). JWT auth. `multer` for
   evidence-photo/PDF uploads, `pdf-lib` for compositing signatures onto the
-  scanned paper-form template, `pngjs`/`jpeg-js` for stripping evidence
-  photos' white backgrounds before compositing.
+  paper-form template, `pngjs`/`jpeg-js` for stripping evidence photos' white
+  backgrounds before compositing.
 - Frontend: React + Vite + React Router + react-i18next (Arabic/English, RTL support).
 - Everything is JavaScript (no TypeScript) to keep the learning curve low for a
   team that is mostly new to fullstack dev.
@@ -40,7 +42,7 @@ the codebase is organized.
 egas-clearance/
   backend/
     assets/
-      clearance-form-template.pdf   the scanned paper form -- the compositing target
+      clearance-form-template.pdf   the paper-form template -- the compositing target
     src/
       config/db.js          Mongo connection
       models/                Mongoose schemas: User, Employee, Department, ClearanceRequest
@@ -138,7 +140,15 @@ ONLY there:
    `multipart/form-data` photo or PDF of the physical signature/stamp,
    captured fresh per request via `multer` (`backend/uploads/<requestId>/...`,
    gitignored). There is no separate "finalize" step and no reject/hold flow
-   — a department is either unsigned or signed.
+   — a department is either unsigned or signed. Either state is reversible
+   though: `POST .../departments/:deptKey/reopen` (and the itemized
+   `.../items/:itemKey/reopen`) resets a signed department/item back to
+   unsigned, clearing its evidence — callable either by File Management (on
+   a request they filed) or by the signing department's own reviewers
+   undoing their own mistake (any of a single-mode department's 2+
+   accounts, or for an itemized item, only the one reviewer it's assigned
+   to — same ownership rule as signing itself). Blocked once the request is
+   archived from AD (point 5) — that really is final.
 4. **Visibility is need-to-know, enforced server-side, not just hidden in the
    UI:**
    - A plain reviewer's `GET /requests` / `GET /requests/:id` response is
@@ -152,12 +162,22 @@ ONLY there:
      the JWT at login so route logic never hardcodes those two keys) get the
      full, un-redacted request — every department's status, signer, and
      evidence — via `canSeeFull()`.
-   - File Management gets neither of the above. They can only see requests
-     THEY created (`createdByUserID`), and only a high-level summary
-     (`summarizeForFileManagement()`: department status only, no signer
-     identity, no evidence). They can download the composited PDF for their
-     own request, but only once it's fully `"completed"` — a live
-     mid-process preview would leak progress beyond their high view.
+   - File Management gets neither of the above global views. They can only
+     see requests THEY created (`createdByUserID`), and a high-level summary
+     (`summarizeForFileManagement()`: department status only, never signer
+     identity or timestamps). The one deliberate exception is evidence
+     itself: a department's uploaded photo/file is included the moment that
+     department's own `status` is `"completed"`, same as oversight sees it —
+     not gated on File Management's own approval below. This is what lets
+     File Management actually spot an illegible signature and reopen it (see
+     the `.../reopen` and `.../items/:itemKey/reopen` routes — password
+     re-auth, resets that department/item back to `"pending"`, clears its
+     evidence, and revokes `fileManagementApproved` if it had already been
+     given) before approving AD deletion, not just after. They can also
+     preview/download the composited PDF for their own request once every
+     department has signed (`allDepartmentsSigned()`, same condition as
+     below — not gated on `status === "completed"`, which would make it
+     unreachable until after IT's own final step).
 5. **"Delete from Active Directory" is the real final step, not a formality
    after the fact — `request.status` only becomes `"completed"` once IT has
    done it.** This is a general rule, not IT-specific busywork: an employee
@@ -167,16 +187,24 @@ ONLY there:
    `archivedFromAD === true`. Concretely: the sign routes can only ever
    recompute `status` back to `"in_progress"`; `POST /:id/archive-ad` is the
    ONLY route that can set it to `"completed"`, and it flips
-   `archivedFromAD`/`completedAt` at the same time. `archive-ad` itself only
-   requires `allDepartmentsSigned()`, not `status === "completed"` — the
-   latter would be circular, since `status` can't reach `"completed"` any
-   other way. Only IT reviewers (`departmentKey === "it"`) can call it —
-   independent of IT's own position (#10) in the order — and any of its 5 can
-   trigger it. Since `status` alone can't tell IT "all 13 have signed" without
-   IT also seeing every other department's detail, every reviewer-facing
-   response carries a separate `readyForAdDeletion` boolean (computed from
-   the full departments array before redaction) — this is what IT's "Delete
-   from Active Directory" button is actually gated on, not `status`.
+   `archivedFromAD`/`completedAt` at the same time. Getting there also
+   requires a second, independent gate: File Management must explicitly
+   `POST /:id/approve-ad-deletion` (their own password re-auth) once
+   `allDepartmentsSigned()` — this is the human checkpoint where they're
+   expected to have already reviewed every department's evidence (see point
+   4) and reopened anything illegible. `archive-ad` itself checks
+   `allDepartmentsSigned() && fileManagementApproved`, not
+   `status === "completed"` — the latter would be circular, since `status`
+   can't reach `"completed"` any other way. Only IT reviewers
+   (`departmentKey === "it"`) can call archive-ad — independent of IT's own
+   position (#10) in the order — and any of its 5 can trigger it. Since
+   `status` alone can't tell IT "all 13 have signed and File Management
+   approved" without IT also seeing every other department's detail, every
+   reviewer-facing response carries `readyForAdDeletion` (both conditions
+   true) and `awaitingFileManagementApproval` (signed but not yet approved) —
+   computed from the full departments array before redaction — so IT's
+   "Delete from Active Directory" button knows when to appear without ever
+   being told which specific other departments are done.
 
 If you need to change any of this logic, it lives in exactly one place. Don't
 duplicate it in the frontend beyond the UX hints in `SignaturePanel.jsx`
@@ -190,19 +218,35 @@ there are cosmetic; the backend is the source of truth.
 signed, draws its uploaded evidence photo into that department's row
 (hand-calibrated coordinates — one table-top offset + one row height, keyed by
 `ClearanceRequest.departments[].order` — see the comment at the top of that
-file for how to re-derive both against a different scan; deriving every row
-from a per-row eyeball estimate drifted about half a row off by row 13, so
-don't go back to that approach) plus the signer's name and date. Only image
-evidence (jpg/png) gets embedded; a PDF upload is still stored/servable via
-`GET /requests/:id/evidence/...` but renders as a text placeholder in the
-composite for now. Before embedding, evidence images are decoded to raw
-pixels (`pngjs`/`jpeg-js`) and near-white background pixels are made
-transparent (`stripNearWhiteBackground()`, soft-edged near the threshold so
-ink strokes don't get a jagged cutout) — a real photo of a signature on paper
-has a white/off-white background, and without this it would composite as a
-visible opaque rectangle stamped over the printed form instead of blending
-in. `GET /requests/:id/pdf` generates this on demand — a partial preview
-while in progress, the final artifact once `status === "completed"`.
+file for how to re-derive both if this template is ever replaced again;
+deriving every row from a per-row eyeball estimate drifted about half a row
+off by row 13 on the original scanned version, so don't go back to that
+approach) plus the signer's name and date. Both image evidence (jpg/png) and
+PDF evidence get embedded — PDF is actually the common case in practice, more
+so than a phone photo — and both go through the same pipeline so they blend
+in the same way: decoded to raw RGBA pixels, then near-white background
+pixels are made transparent (`stripNearWhiteBackground()`, soft-edged near
+the threshold so ink strokes don't get a jagged cutout) — a real signature
+(photographed on paper, or a scanned/exported PDF page) has a white/off-white
+background, and without this it would composite as a visible opaque
+rectangle stamped over the printed form instead of blending in. Images
+decode directly (`pngjs`/`jpeg-js`); a PDF's first page is rasterized first
+(`pdfjs-dist` + `@napi-rs/canvas`, `rasterizePdfPage()` in
+`clearancePdf.js`) so it can go through the exact same treatment rather than
+being embedded as an untouched vector block. Before the white-strip step,
+`cropToContent()` also trims the decoded pixels down to the bounding box of
+non-near-white content (small margin kept) — without this, evidence that's a
+whole scanned/exported page with the actual ink occupying only a small
+portion of it (an A4 PDF export being the common shape here) would scale
+down to an illegible sliver once the page's own empty margin has to shrink
+along with it to fit the signature cell; cropping first means only the
+signature itself gets sized to fill the cell, regardless of how much blank
+page surrounds it in the original upload. webp evidence (accepted on
+upload, see the multer `fileFilter` in `request.routes.js`) is the one gap
+left — still stored/servable via `GET /requests/:id/evidence/...`, just not
+composited, since the decode step only handles png/jpeg/pdf.
+`GET /requests/:id/pdf` generates this on demand — a partial preview while
+in progress, the final artifact once `status === "completed"`.
 
 ## What's on a clearance request
 

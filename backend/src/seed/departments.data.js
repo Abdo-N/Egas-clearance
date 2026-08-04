@@ -32,7 +32,7 @@ const departments = [
       { key: "mobile_data_lines", label_ar: "خط المحمول وخط الداتا", label_en: "Mobile Line & Data Line" },
       { key: "phone", label_ar: "الهاتف", label_en: "Phone" },
       { key: "pc_account_mailbox", label_ar: "الكمبيوتر والحساب والبريد الإلكتروني", label_en: "PC, Account & Mailbox" },
-      { key: "sap_service", label_ar: "خدمة SAP", label_en: "SAP Service" },
+      { key: "sap_service", label_ar: "خدمات SAP", label_en: "SAP Services" },
       { key: "sap_account_removal", label_ar: "إزالة حساب SAP", label_en: "SAP Account Removal" },
     ],
   },

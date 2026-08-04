@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DepartmentIcon from "./DepartmentIcon";
+import ReauthConfirmButton from "./ReauthConfirmButton";
 import { formatDate } from "../utils/formatDate";
 
 /**
@@ -47,7 +48,26 @@ function SignForm({ onSubmit, busy, t }) {
   );
 }
 
-export default function SignaturePanel({ department, user, onSign, busy }) {
+// A reviewer undoing their OWN just-signed department/item -- e.g. they
+// uploaded the wrong file by mistake -- without needing File Management to
+// do it for them. Same re-auth pattern and same backend routes as File
+// Management's reopen (see request.routes.js), just called by the owning
+// reviewer instead; the backend tells the two apart by role, not this
+// component.
+function UndoControl({ onConfirm, t }) {
+  return (
+    <ReauthConfirmButton
+      openLabel={t("reviewer.undoButton")}
+      confirmLabel={t("reviewer.confirmUndo")}
+      busyLabel={t("reviewer.undoing")}
+      cancelLabel={t("reviewer.cancel")}
+      errorFallback={t("reviewer.undoError")}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+export default function SignaturePanel({ department, user, onSign, busy, onUndo }) {
   const { i18n, t } = useTranslation();
   const isAr = i18n.language === "ar";
   const deptLabel = isAr ? department.name_ar : department.name_en;
@@ -78,6 +98,9 @@ export default function SignaturePanel({ department, user, onSign, busy }) {
                     <small>
                       {item.signedByFullName} · {formatDate(item.signedAt, i18n.language)}
                     </small>
+                    {isMine && onUndo && (
+                      <UndoControl t={t} onConfirm={(password) => onUndo({ itemKey: item.key, password })} />
+                    )}
                   </div>
                 ) : isMine ? (
                   <SignForm
@@ -109,6 +132,7 @@ export default function SignaturePanel({ department, user, onSign, busy }) {
           <small>
             {department.signedByFullName} · {formatDate(department.signedAt, i18n.language)}
           </small>
+          {onUndo && <UndoControl t={t} onConfirm={(password) => onUndo({ password })} />}
         </div>
       ) : (
         <SignForm t={t} busy={busy} onSubmit={({ password, file }) => onSign({ password, file })} />

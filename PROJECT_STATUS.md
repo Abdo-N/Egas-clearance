@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-08-04 (AD-deletion "final marker" + richer dashboards for
-File Management/IT/oversight, by Nader + Claude).
+Last updated: 2026-08-04 (fixed a File-Management-visibility bug, real PDF
+evidence embedding, and self-undo for reviewers, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -480,6 +480,188 @@ Update this file whenever a task moves — don't let it go stale.
       them for Mohamed Farouk's (#10567) request, which is still genuinely
       waiting on Wages/Finance, not IT.
 
+- [x] **New paper-form template + live evidence previews (2026-08-04):**
+      - **Replaced `backend/assets/clearance-form-template.pdf`** with a
+        newer, cleaner source (a native Word-exported PDF, A4
+        595.32x841.92pt -- not a scan, so its grid lines are real vector
+        strokes rather than something to eyeball). Same 13 departments/order,
+        same 5-column layout (م / الإدارة / البيان / التوقيع / الاسم), so no
+        seed-data or schema changes needed. `clearancePdf.js`'s `TABLE_TOP`/
+        `ROW_HEIGHT`/`COLUMNS` were re-derived to match (rendered at 300dpi,
+        binarized, found the pixel rows/columns that are dark across nearly
+        the whole table width/height -- grid lines are solid across a whole
+        row/column, text isn't -- then converted to PDF points). One
+        genuine oddity in the source table: row 7 ("تنمية الموارد البشرية")
+        is a few points shorter than the other 12; used a uniform row height
+        anyway (same reasoning as the previous template's calibration
+        comment) rather than 13 separately-measured rows. Verified by
+        generating a real composited PDF with dummy signature images across
+        all 13 rows (including the itemized IT row) and visually confirming
+        every name/photo lands inside its own row with no overlap.
+      - **File Management and oversight (wages/finance) now see each
+        department's uploaded evidence the moment that department signs**,
+        not only after File Management's own approve-ad-deletion step. This
+        was the actual point of the previously-existing
+        `request.fileManagementApproved` gate on evidence in
+        `summarizeForFileManagement()` / `GET /:id/evidence/...` /
+        `RequestOversightGrid.jsx` -- since that approval itself requires
+        every one of the 13 departments to already be signed
+        (`allDepartmentsSigned()`), the gate meant evidence was only ever
+        visible once the whole request was already done, which defeated the
+        stated purpose of File Management using it to "check evidence
+        legibility before approving" (see the approve-ad-deletion route's
+        own comment). Removed the gate: both views now show a department's
+        evidence as soon as that department's own `status` is `"completed"`,
+        same moment its green badge appears. Signer identity is still never
+        shown to File Management -- only the evidence photo. The
+        already-existing per-department/per-item "Reopen" undo (resets a
+        signature back to `"pending"`, clears the evidence, requires File
+        Management's password) is what actually lets File Management act on
+        an unclear signature they spot this way -- no new code needed there,
+        it just wasn't very usable before since evidence wasn't visible until
+        the end anyway.
+      - **Reviewer dashboard heading now shows the reviewer's actual
+        department name** (e.g. "الأمن" / "Security") instead of a generic
+        "My department's dashboard" label. `POST /auth/login` now embeds
+        `departmentName_ar`/`departmentName_en` in the JWT payload (looked up
+        from `Department` once at login, same pattern as the existing
+        `hasOversightDashboard` lookup) so the frontend doesn't need a
+        request loaded first to know its own department's display name.
+        Removed the now-dead `reviewer.title` i18n key.
+      - Verified live end-to-end against the shared Atlas cluster (not
+        reseeded -- ran targeted API calls instead to avoid wiping real
+        data): created a real request, signed one department, confirmed File
+        Management's `GET /requests/:id` showed that department's evidence
+        with `fileManagementApproved` still `false` and no signer name
+        leaked, streamed the evidence file directly, reopened it back to
+        `"pending"` with evidence cleared, and confirmed both a plain
+        reviewer's and an oversight reviewer's login payload carry the
+        correct `departmentName_ar/en`. Frontend `npm run build` clean.
+
+- [x] **Fixed a real bug: File Management's evidence preview and Reopen
+      button were silently never rendering (2026-08-04).** Caught by
+      actually driving the app with a headless browser (Playwright,
+      temporary devDependency again) after being told the Reopen button
+      wasn't showing up -- `summarizeForFileManagement()` in
+      `request.routes.js` built each department's summary object without a
+      `signatureMode` field, even though `RequestOversightGrid.jsx` branches
+      on `d.signatureMode === "single"` to decide whether to show the
+      department-level evidence preview AND the Reopen control.
+      `undefined === "single"` is always false, so both silently never
+      rendered for File Management -- oversight (wages/finance) was
+      unaffected since their view (`withOwnDepartmentAnnotated`) already
+      passes through the full department object, `signatureMode` included.
+      One-line fix: added `signatureMode: d.signatureMode` to the mapped
+      object. Verified live: screenshotted the rendered HTML before (badge
+      only, no preview, no button) and after (thumbnail + "Reopen" both
+      present) the fix.
+- [x] **PDF-uploaded evidence now actually composites, instead of leaving the
+      signature cell blank (2026-08-04).** Most real evidence uploads are a
+      signed PDF, not a phone photo -- and `drawEvidenceImage()` in
+      `clearancePdf.js` only ever handled `image/jpeg`/`image/png`; anything
+      else (including `application/pdf`) just returned without drawing
+      anything, silently leaving that row's signature cell empty. First pass
+      fixed this by embedding the PDF's page directly as a vector object
+      (`pdfDoc.embedPdf()` + `page.drawPage()`) -- no new dependency, worked,
+      but meant PDF evidence skipped the white-background-stripping treatment
+      photos get, so it was a second, inconsistent compositing path. Revised
+      same day: the PDF's first page is now rasterized to RGBA pixels first
+      (`pdfjs-dist` + `@napi-rs/canvas`, both new deps -- picked over
+      shelling out to poppler/`pdftoppm` to avoid a system-binary deployment
+      requirement, and over `mupdf` due to its AGPL license, which doesn't
+      fit a business app cleanly) so it can go through the exact same
+      `stripNearWhiteBackground()` -> `embedPng()` pipeline as a photo,
+      instead of two different code paths for the same job. `decodeToRgba`
+      became `decodeEvidenceToRgba()` (async now, dispatches on mimetype:
+      png/jpeg decode directly, pdf rasterizes first) and
+      `drawScaledIntoSignatureCell()` dropped its `drawFn` parameter since
+      both branches now always call `page.drawImage()`. Passes
+      `standardFontDataUrl` (pdfjs-dist's bundled standard font metrics) to
+      `getDocument()` -- without it, a PDF referencing a standard font like
+      Helvetica by name (rather than embedding it, e.g. text-based
+      signature exports) rendered with visibly wrong glyph spacing. webp
+      (accepted on upload, per multer's fileFilter) still isn't composited --
+      decode only handles png/jpeg/pdf -- left as a known gap, flagged in a
+      comment, since it wasn't the reported problem. Verified: rasterized a
+      synthetic PDF signature standalone and confirmed correct glyph
+      spacing/positioning, generated a full composited test PDF with it
+      blending in identically to photo evidence, then re-verified through
+      the actual upload route end to end (signed a real department via the
+      running app with a PDF file, downloaded the composited PDF, confirmed
+      the same, ~225ms including rasterization -- fine for an on-demand
+      generate-and-download action).
+- [x] **Reviewers can now undo their own just-signed department/item, not
+      just File Management (2026-08-04).** E.g. uploaded the wrong file by
+      mistake -- previously only File Management could reopen a signature
+      (`POST .../reopen`, `.../items/:itemKey/reopen`), which meant looping
+      them in even for an immediate self-caught mistake. Both routes now
+      accept either caller: File Management (own filed request, unchanged)
+      OR the signing department's own reviewers -- any of a single-mode
+      department's 2+ accounts (matching the same "any one of them" rule
+      signing itself uses, not just whoever originally signed), or for an
+      itemized (IT) item, only the one reviewer it's permanently assigned to
+      (matching the sign route's own `assignedItemKey` check). Response
+      shape now depends on which kind of caller it was
+      (`summarizeForFileManagement()` vs `redactToOwnDepartment()`), where
+      before it was always the former. Frontend: extracted the
+      password-reauth-collapsed-button pattern (previously duplicated
+      inline as `ReopenControl` in `RequestOversightGrid.jsx`) into a shared
+      `frontend/src/components/ReauthConfirmButton.jsx`, since the exact
+      same interactive pattern was now needed a third time; `RequestOversightGrid.jsx`
+      was refactored to use it (no behavior change), and `SignaturePanel.jsx`
+      gained a new "Undo" control next to the "signed" banner (single-mode)
+      and next to a completed item's confirmation (itemized, only shown on
+      the viewing reviewer's own item) -- both call the same backend routes
+      `ReviewerDashboard.jsx`'s `handleUndo` already posts to, just
+      authenticated as the reviewer instead of File Management. Verified
+      live end-to-end (Playwright): signed in as a security reviewer, saw
+      the new "تراجع" (Undo) button next to the signed banner, clicked
+      through the re-auth confirm, watched the panel revert to the plain
+      sign form, and confirmed `backend/scripts/smoke-test.js` now also
+      covers both the department- and item-level self-undo paths plus their
+      403 boundaries (wrong department / wrong IT reviewer) -- all green.
+- [x] **PDF evidence no longer scales down to an illegible sliver when it's a
+      whole scanned/exported page (2026-08-04).** Follow-up to the PDF
+      rasterization work above, found by testing with real (not synthetic)
+      sample signatures: a full A4 PDF page with the actual ink occupying
+      only a small portion of it was scaling down along with all of that
+      page's empty margin to fit the tiny signature cell, leaving a
+      barely-visible smudge even though the source signature itself was
+      perfectly legible. New `cropToContent()` in `clearancePdf.js` trims
+      the decoded RGBA (photo or rasterized PDF page, same code path either
+      way) down to the bounding box of non-near-white content before the
+      white-strip step, so only the signature itself gets sized to fill the
+      cell regardless of how much blank page surrounds it in the original
+      upload -- verified by re-running the same real-file test that
+      surfaced the problem and confirming every row now renders at a
+      consistent, legible size.
+- [x] **Seeded demo evidence now uses a realistic mix of formats, not just 3
+      uniform PNGs (2026-08-04).** `backend/src/seed/seed.js`'s
+      `planDummySignature()` hardcoded `mimeType: "image/png"` for every
+      dummy signature regardless of the source file's real format --
+      harmless while the only samples were PNGs, but would have silently
+      mislabeled anything else. Replaced the old 3-PNG set (originally
+      copied from `frontend/src/assets/`) with 6 real sample signatures
+      (jpg, png, and PDF -- including one 2-page and one landscape-oriented
+      PDF) added there, re-copied into `backend/assets/dummy-signatures/`,
+      and fixed `planDummySignature()` to derive the mimetype from each
+      file's actual extension. Seeded demo requests now exercise every
+      branch of the evidence-compositing pipeline (image decode, PDF
+      rasterize) instead of just one. Not yet re-seeded against the shared
+      Atlas cluster -- verified with a standalone script that calls
+      `generateClearancePdf()` directly against copies of the new files
+      instead, so the live dev database (which currently has real in-progress
+      test requests on it) isn't touched without asking first.
+- [x] **Removed the "Deleted from AD" stat tile from every dashboard
+      (2026-08-04).** `DepartmentDashboard.jsx` had a KPI tile counting
+      archived-from-AD requests on IT's and oversight's dashboards. Removed
+      the tile and the now-unused `archivedCount` computation from both
+      `computeOwnStats()` and `computeCompanyStats()`. The per-request
+      "Deleted from AD" badge elsewhere (File Management's list row, the
+      oversight/File-Management detail grid's banner, IT's own recent-activity
+      rows) is unchanged -- that's a status indicator on a specific request,
+      not an aggregate statistic, and wasn't what was asked to go.
+
 ## Team update
 
 **Team is now 3 people: Nader (lead), Ziad, Jana.** Habiba and Khaled's
@@ -522,11 +704,12 @@ that was fixed.
       flip `archivedFromAD: true` on the `Employee` record instead of actually
       deleting it. Needs a real design pass once the team has bandwidth.
 - [ ] **Hosting/deployment target.** Not yet decided — local dev only so far.
-- [ ] **PDF row coordinates are hand-calibrated against one scanned copy**
-      of the paper form (`backend/assets/clearance-form-template.pdf`). If
-      EGAS provides a cleaner/blank source scan, `backend/src/services/clearancePdf.js`
-      needs its `ROWS`/`COLUMNS` constants re-tuned against it (instructions
-      in that file's header comment).
+- [x] ~~PDF row coordinates are hand-calibrated against one scanned copy of
+      the paper form.~~ Resolved 2026-08-04: EGAS provided a cleaner source
+      (see "New paper-form template..." above) and `clearancePdf.js`'s
+      `ROWS`/`COLUMNS` were re-tuned against it. Still hand-calibrated
+      against this one specific template, though -- if it's ever replaced
+      again, re-derive per that file's header comment.
 
 ## Open questions for Nader to raise with whoever assigned this project
 

@@ -12,9 +12,22 @@
  *     department has signed.
  *   - Non-IT departments: single signature, any one of 2 reviewers.
  *   - IT: 5 itemized signatures, each only signable by its assigned reviewer.
- *   - "Delete from Active Directory" only works once all 13 have signed, and
+ *   - "Delete from Active Directory" only works once all 13 have signed AND
+ *     File Management has explicitly approved (approve-ad-deletion), and
  *     only for IT. General rule: signing alone never marks a request
  *     "completed" -- only archive-ad does, even after all 13 sign.
+ *   - File Management can reopen a signed department/item (evidence turned
+ *     out unclear) -- resets it to unsigned and revokes any prior approval.
+ *   - A department can ALSO undo its own signature itself (any of its 2+
+ *     reviewers, not just whoever originally signed -- or for IT, only the
+ *     one reviewer that item is permanently assigned to), without needing
+ *     File Management to do it for them. Same effect as File Management's
+ *     reopen, different caller.
+ *   - File Management can view a department's evidence as soon as that
+ *     department signs, same as oversight (wages/finance) -- this is what
+ *     lets them actually spot an unclear signature and reopen it BEFORE
+ *     giving the AD-deletion OK, not only after approving. Signer identity
+ *     is still never shown to them, though.
  *   - A plain reviewer's request list/detail is redacted to their own
  *     department only.
  */
@@ -96,6 +109,34 @@ async function main() {
   }
   console.log("done");
 
+  console.log("--- a department can undo its OWN signature (not just File Management) -- e.g. wrong file uploaded ---");
+  const illicitGains2Token = await login("illicit_gains.reviewer2");
+  const selfUndo = await fetch(`${BASE}/requests/${requestId}/departments/illicit_gains/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${illicitGains2Token}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  const selfUndoJson = await selfUndo.json();
+  if (selfUndo.status !== 200) throw new Error(`self-undo failed: ${JSON.stringify(selfUndoJson)}`);
+  assert(
+    selfUndoJson.departments[0].status === "pending",
+    "expected illicit_gains back to 'pending' after a DIFFERENT reviewer of the same department undid it themselves"
+  );
+
+  console.log("--- a reviewer from a DIFFERENT department cannot undo illicit_gains's signature (403) ---");
+  const libraryToken = await login("library.reviewer1");
+  const wrongDeptUndo = await fetch(`${BASE}/requests/${requestId}/departments/illicit_gains/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${libraryToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  assert(wrongDeptUndo.status === 403, "expected 403 undoing another department's signature");
+
+  console.log("--- illicit_gains re-signs after self-undo ---");
+  const illicitGains1Token = await login("illicit_gains.reviewer1");
+  const reSignIllicitGains = await signSingle(requestId, "illicit_gains", illicitGains1Token);
+  if (reSignIllicitGains.status !== 200) throw new Error(`failed to re-sign illicit_gains: ${JSON.stringify(await reSignIllicitGains.json())}`);
+
   console.log("--- IT: wrong reviewer signing someone else's item is rejected (403) ---");
   const phoneToken = await login("it.phone.reviewer");
   const wrongItem = await signItem(requestId, "it", "sap_service", phoneToken);
@@ -110,6 +151,36 @@ async function main() {
   }
   console.log("done");
 
+  console.log("--- the reviewer an IT item is assigned to can undo their OWN item ---");
+  const phoneSelfUndo = await fetch(`${BASE}/requests/${requestId}/departments/it/items/phone/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${phoneToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  const phoneSelfUndoJson = await phoneSelfUndo.json();
+  if (phoneSelfUndo.status !== 200) throw new Error(`IT self-undo failed: ${JSON.stringify(phoneSelfUndoJson)}`);
+  assert(
+    phoneSelfUndoJson.departments[0].items.find((i) => i.key === "phone").status === "pending",
+    "expected the phone item back to 'pending' after its own reviewer undid it"
+  );
+  assert(
+    phoneSelfUndoJson.departments[0].status === "pending",
+    "expected IT's department status to revert to 'pending' now that one item is unsigned again"
+  );
+
+  console.log("--- a DIFFERENT IT reviewer cannot undo someone else's item (403) ---");
+  const mobileDataToken = await login("it.mobile_data_lines.reviewer");
+  const wrongItemUndo = await fetch(`${BASE}/requests/${requestId}/departments/it/items/phone/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${mobileDataToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  assert(wrongItemUndo.status === 403, "expected 403 undoing another reviewer's assigned item");
+
+  console.log("--- phone re-signs their own item after self-undo ---");
+  const reSignPhone = await signItem(requestId, "it", "phone", phoneToken);
+  if (reSignPhone.status !== 200) throw new Error(`failed to re-sign phone item: ${JSON.stringify(await reSignPhone.json())}`);
+
   console.log("--- tier 2 (wages, finance) now unlocked ---");
   const wagesSign = await signSingle(requestId, "wages", wagesToken);
   if (wagesSign.status !== 200) throw new Error(`failed to sign wages: ${JSON.stringify(await wagesSign.json())}`);
@@ -123,19 +194,86 @@ async function main() {
   const finalRequest = await finalGet.json();
   assert(finalRequest.status === "in_progress", `expected 'in_progress' until AD deletion, got '${finalRequest.status}'`);
   assert(
-    finalRequest.departments.every((d) => !("signedByUserID" in d) && !("evidence" in d)),
-    "expected File Management's view to omit signer identity and evidence"
+    finalRequest.departments.every((d) => !("signedByUserID" in d)),
+    "expected File Management's view to never include signer identity"
+  );
+  assert(
+    finalRequest.departments.find((d) => d.departmentKey === "wages").evidence?.mimeType === "image/png",
+    "expected File Management to already see a signed department's evidence, even before approving the request"
   );
 
-  console.log("--- IT sees readyForAdDeletion=true without seeing other departments' detail ---");
-  const itPreArchiveGet = await fetch(`${BASE}/requests/${requestId}`, { headers: { Authorization: `Bearer ${phoneToken}` } });
-  const itPreArchiveJson = await itPreArchiveGet.json();
-  assert(itPreArchiveJson.readyForAdDeletion === true, "expected readyForAdDeletion=true once all 13 have signed");
-  assert(itPreArchiveJson.departments.length === 1, "IT should still only see its own department");
+  console.log("--- IT sees awaitingFileManagementApproval=true, NOT readyForAdDeletion (all signed, but not yet approved) ---");
+  const itPreApprovalGet = await fetch(`${BASE}/requests/${requestId}`, { headers: { Authorization: `Bearer ${phoneToken}` } });
+  const itPreApprovalJson = await itPreApprovalGet.json();
+  assert(itPreApprovalJson.readyForAdDeletion === false, "expected readyForAdDeletion=false before File Management approves");
+  assert(itPreApprovalJson.awaitingFileManagementApproval === true, "expected awaitingFileManagementApproval=true once all 13 have signed");
+  assert(itPreApprovalJson.departments.length === 1, "IT should still only see its own department");
 
-  console.log("--- File Management cannot download the PDF yet -- not 'completed' until AD deletion (403) ---");
-  const pdfTooEarly = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${fileMgmtToken}` } });
-  assert(pdfTooEarly.status === 403, "expected 403 fetching PDF before AD deletion");
+  console.log("--- File Management CAN preview the PDF now -- every department signed, nothing partial left to leak ---");
+  const pdfBeforeApproval = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${fileMgmtToken}` } });
+  assert(pdfBeforeApproval.status === 200, "expected 200 previewing the PDF once every department has signed");
+
+  console.log("--- File Management CAN view a signed department's evidence directly, before approving (how they'd catch an unclear signature) ---");
+  const evidenceBeforeApproval = await fetch(`${BASE}/requests/${requestId}/evidence/wages`, {
+    headers: { Authorization: `Bearer ${fileMgmtToken}` },
+  });
+  assert(evidenceBeforeApproval.status === 200, "expected 200 viewing a signed department's evidence as File Management before approval");
+
+  console.log("--- IT cannot delete from AD before File Management approves (400) ---");
+  const archiveBeforeApproval = await fetch(`${BASE}/requests/${requestId}/archive-ad`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${phoneToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  assert(archiveBeforeApproval.status === 400, "expected 400 for archive-ad before File Management approval");
+
+  console.log("--- File Management reopens security's signature (e.g. it turned out unclear) ---");
+  const securityToken = await login("security.reviewer1");
+  const reopenRes = await fetch(`${BASE}/requests/${requestId}/departments/security/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileMgmtToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  const reopenJson = await reopenRes.json();
+  if (reopenRes.status !== 200) throw new Error(`reopen failed: ${JSON.stringify(reopenJson)}`);
+  assert(
+    reopenJson.departments.find((d) => d.departmentKey === "security").status === "pending",
+    "expected security to be back to 'pending' after reopen"
+  );
+  assert(reopenJson.awaitingFileManagementApproval === false, "expected awaitingFileManagementApproval=false once a department is reopened");
+
+  console.log("--- security re-signs after reopen ---");
+  const resignSecurity = await signSingle(requestId, "security", securityToken);
+  if (resignSecurity.status !== 200) throw new Error(`failed to re-sign security: ${JSON.stringify(await resignSecurity.json())}`);
+
+  console.log("--- File Management approves now that all 13 have signed again ---");
+  const approveRes = await fetch(`${BASE}/requests/${requestId}/approve-ad-deletion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileMgmtToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  const approveJson = await approveRes.json();
+  if (approveRes.status !== 200) throw new Error(`approve-ad-deletion failed: ${JSON.stringify(approveJson)}`);
+  assert(approveJson.readyForAdDeletion === true, "expected readyForAdDeletion=true once File Management approves");
+  assert(approveJson.awaitingFileManagementApproval === false, "expected awaitingFileManagementApproval=false once approved");
+  assert(
+    approveJson.departments.find((d) => d.departmentKey === "wages").evidence?.mimeType === "image/png",
+    "expected File Management's own view to still include evidence after approving"
+  );
+
+  console.log("--- File Management can still view evidence after approving too ---");
+  const evidenceAfterApproval = await fetch(`${BASE}/requests/${requestId}/evidence/wages`, {
+    headers: { Authorization: `Bearer ${fileMgmtToken}` },
+  });
+  assert(evidenceAfterApproval.status === 200, "expected 200 viewing evidence as File Management after approval");
+
+  console.log("--- approving twice is rejected (409) ---");
+  const approveAgain = await fetch(`${BASE}/requests/${requestId}/approve-ad-deletion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileMgmtToken}` },
+    body: JSON.stringify({ password: "Passw0rd!" }),
+  });
+  assert(approveAgain.status === 409, "expected 409 for double approval");
 
   console.log("--- a non-IT reviewer cannot delete from Active Directory (403) ---");
   const nonItArchive = await fetch(`${BASE}/requests/${requestId}/archive-ad`, {
@@ -166,7 +304,6 @@ async function main() {
   assert(archiveAgain.status === 409, "expected 409 for double archive-ad");
 
   console.log("--- a plain reviewer's list/detail is redacted to their own department only ---");
-  const securityToken = await login("security.reviewer1");
   const securityDetail = await fetch(`${BASE}/requests/${requestId}`, { headers: { Authorization: `Bearer ${securityToken}` } });
   const securityJson = await securityDetail.json();
   assert(securityJson.departments.length === 1, "expected exactly one department in a plain reviewer's view");

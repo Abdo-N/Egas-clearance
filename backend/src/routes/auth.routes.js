@@ -27,14 +27,21 @@ router.post("/login", asyncHandler(async (req, res) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: "Invalid user ID or password" });
 
-  // Reviewers get their department's hasOversightDashboard flag embedded in
-  // the token so route/UI logic never has to hardcode which department keys
-  // (wages, finance) get the oversight dashboard -- that's config on
-  // Department, looked up once here.
+  // Reviewers get their department's hasOversightDashboard flag (and
+  // display name) embedded in the token so route/UI logic never has to
+  // hardcode which department keys (wages, finance) get the oversight
+  // dashboard, or maintain a second copy of the department name list --
+  // that's all config on Department, looked up once here. The dashboard
+  // heading (see ReviewerDashboard.jsx) is just this name, not a generic
+  // "my department's dashboard" label.
   let hasOversightDashboard = false;
+  let departmentName_ar = null;
+  let departmentName_en = null;
   if (user.role === "reviewer" && user.departmentKey) {
     const dept = await Department.findOne({ key: user.departmentKey });
     hasOversightDashboard = Boolean(dept?.hasOversightDashboard);
+    departmentName_ar = dept?.name_ar || null;
+    departmentName_en = dept?.name_en || null;
   }
 
   const payload = {
@@ -44,6 +51,8 @@ router.post("/login", asyncHandler(async (req, res) => {
     departmentKey: user.departmentKey,
     assignedItemKey: user.assignedItemKey,
     hasOversightDashboard,
+    departmentName_ar,
+    departmentName_en,
   };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
