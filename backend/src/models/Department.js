@@ -37,7 +37,7 @@ const departmentSchema = new mongoose.Schema(
     // dashboard -- same visibility as File Management. Config-driven so
     // request.routes.js never hardcodes department keys.
     hasOversightDashboard: { type: Boolean, default: false },
-    // "single": any one of the department's 2+ reviewers signs once and the
+    // "single": any one of the department's reviewers signs once and the
     // department is done. "itemized": only IT -- each checklistItems entry
     // needs its own assigned reviewer to sign it; the department completes
     // once every item is signed.

@@ -1,59 +1,8 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import client from "../api/client";
 import DepartmentIcon from "./DepartmentIcon";
+import EvidencePreview from "./EvidencePreview";
 import ReauthConfirmButton from "./ReauthConfirmButton";
 import { formatDate } from "../utils/formatDate";
-
-// A small photo/file preview of the uploaded evidence, fetched lazily (the
-// underlying route requires the same auth token as everything else, so this
-// can't just be a plain <img src="..."> -- pull it as a blob and hand the
-// browser an object URL, same trick as the PDF download). Rendered as soon
-// as the department/item it belongs to is completed -- both oversight
-// (wages/finance, "full") and File Management ("summary") see this beside
-// the green status the moment it appears, not just once the whole request
-// is done and approved.
-function EvidencePreview({ requestId, deptKey, itemKey, mimeType, t }) {
-  const [url, setUrl] = useState(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let objectUrl;
-    let cancelled = false;
-    async function load() {
-      try {
-        const path = itemKey
-          ? `/requests/${requestId}/evidence/${deptKey}/${itemKey}`
-          : `/requests/${requestId}/evidence/${deptKey}`;
-        const { data } = await client.get(path, { responseType: "blob" });
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(data);
-        setUrl(objectUrl);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [requestId, deptKey, itemKey]);
-
-  if (failed) return null;
-  if (!url) return <small className="evidence-preview-loading">{t("common.loading")}</small>;
-
-  const isImage = /^image\//.test(mimeType || "");
-  return (
-    <a href={url} target="_blank" rel="noreferrer" className="evidence-preview-link">
-      {isImage ? (
-        <img src={url} alt={t("common.evidencePreviewAlt")} className="evidence-preview-thumb" />
-      ) : (
-        <span className="secondary-button">{t("common.viewEvidenceFile")}</span>
-      )}
-    </a>
-  );
-}
 
 // File Management's reopen control -- ReauthConfirmButton wired to the
 // fileManagement.* i18n keys. Extracted as its own component only so the
@@ -96,96 +45,107 @@ export default function RequestOversightGrid({ request, detail = "full", onReope
   const sorted = [...request.departments].sort((a, b) => a.order - b.order);
 
   // Every department signing off is NOT the same as the employee being
-  // cleared -- IT deleting them from Active Directory is the real final
+  // cleared -- IT revoking their system access is the real final
   // step (see request.routes.js computeOverallStatus). Without this, a
-  // fully-signed-but-not-yet-archived request just reads as generic
+  // fully-signed-but-not-yet-revoked request just reads as generic
   // "in progress" with no hint of what it's actually waiting on.
-  const awaitingAdDeletion = !request.archivedFromAD && request.readyForAdDeletion;
+  const awaitingAccessRevocation = !request.accessRevoked && request.readyForAccessRevocation;
 
   return (
     <>
-      {request.archivedFromAD && (
+      {request.accessRevoked && (
         <div className="archived-marker">
           <span>✓</span>
-          {t("common.archivedFromAdMarker")}
-          {request.archivedAt && <small> · {formatDate(request.archivedAt, i18n.language)}</small>}
+          {t("common.accessRevokedMarker")}
+          {request.accessRevokedAt && <small> · {formatDate(request.accessRevokedAt, i18n.language)}</small>}
         </div>
       )}
-      {awaitingAdDeletion && (
+      {awaitingAccessRevocation && (
         <div className="awaiting-marker">
           <span>⏳</span>
-          {t("common.awaitingAdDeletionMarker")}
+          {t("common.awaitingAccessRevocationMarker")}
         </div>
       )}
-      <ul className="oversight-grid">
-        {sorted.map((d) => {
-          const isIt = d.departmentKey === "it";
-          const canReopenDept = onReopenDepartment && d.signatureMode === "single" && d.status === "completed";
-          return (
-            <li key={d.departmentKey} className="oversight-grid-row">
-              <span className="request-list-dept">
-                <DepartmentIcon departmentKey={d.departmentKey} className="request-list-icon" />
-                {isAr ? d.name_ar : d.name_en}
-              </span>
-              <span className={`badge ${d.status}`}>
-                {d.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
-              </span>
-              {isIt && d.status === "completed" && awaitingAdDeletion && (
-                <small className="oversight-grid-it-note">{t("common.itAdDeletionPendingNote")}</small>
-              )}
-              {detail === "full" && d.status === "completed" && d.signatureMode === "single" && (
-                <small className="oversight-grid-signer">
-                  {d.signedByFullName} · {formatDate(d.signedAt, i18n.language)}
-                </small>
-              )}
-              {detail === "full" && d.status === "completed" && d.signatureMode === "itemized" && (
-                <small className="oversight-grid-signer">
-                  {d.items.map((i) => i.signedByFullName).join(" / ")} ·{" "}
-                  {formatDate(d.items[d.items.length - 1]?.signedAt, i18n.language)}
-                </small>
-              )}
-              {d.status === "completed" && d.evidence && d.signatureMode === "single" && (
-                <EvidencePreview
-                  requestId={request._id}
-                  deptKey={d.departmentKey}
-                  mimeType={d.evidence.mimeType}
-                  t={t}
-                />
-              )}
-              {canReopenDept && (
-                <ReopenControl t={t} onConfirm={(password) => onReopenDepartment(d.departmentKey, password)} />
-              )}
-              {d.signatureMode === "itemized" && d.items?.length > 0 && (
-                <ul className="oversight-grid-items">
-                  {d.items.map((item) => (
-                    <li key={item.key} className="oversight-grid-item-row">
-                      <span>{isAr ? item.label_ar : item.label_en}</span>
-                      <span className={`badge ${item.status}`}>
-                        {item.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
-                      </span>
-                      {item.status === "completed" && item.evidence && (
-                        <EvidencePreview
-                          requestId={request._id}
-                          deptKey={d.departmentKey}
-                          itemKey={item.key}
-                          mimeType={item.evidence.mimeType}
-                          t={t}
-                        />
-                      )}
-                      {item.status === "completed" && onReopenItem && (
-                        <ReopenControl
-                          t={t}
-                          onConfirm={(password) => onReopenItem(d.departmentKey, item.key, password)}
-                        />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+
+      <div className="detail-progress-track">
+        {sorted.map((d) => (
+          <div
+            key={d.departmentKey}
+            className={`detail-progress-segment ${d.status}`}
+            title={isAr ? d.name_ar : d.name_en}
+          />
+        ))}
+      </div>
+
+      <div className="checklist-box">
+        <ul className="checklist-items">
+          {sorted.map((d) => {
+            const isIt = d.departmentKey === "it";
+            const canReopenDept = onReopenDepartment && d.signatureMode === "single" && d.status === "completed";
+            return (
+              <li key={d.departmentKey}>
+                <span className="request-list-dept">
+                  <DepartmentIcon departmentKey={d.departmentKey} className="request-list-icon" />
+                  {isAr ? d.name_ar : d.name_en}
+                </span>
+                <span className={`status-pill ${d.status}`}>
+                  {d.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+                </span>
+                {isIt && d.status === "completed" && awaitingAccessRevocation && (
+                  <small className="oversight-grid-it-note">{t("common.itAccessRevocationPendingNote")}</small>
+                )}
+                {detail === "full" && d.status === "completed" && d.signatureMode === "single" && (
+                  <small className="oversight-grid-signer">
+                    {d.signedByFullName} · {formatDate(d.signedAt, i18n.language)}
+                  </small>
+                )}
+                {detail === "full" && d.status === "completed" && d.signatureMode === "itemized" && (
+                  <small className="oversight-grid-signer">
+                    {d.items.map((i) => i.signedByFullName).join(" / ")} ·{" "}
+                    {formatDate(d.items[d.items.length - 1]?.signedAt, i18n.language)}
+                  </small>
+                )}
+                {d.status === "completed" && d.evidence && d.signatureMode === "single" && (
+                  <EvidencePreview requestId={request._id} deptKey={d.departmentKey} mimeType={d.evidence.mimeType} />
+                )}
+                {canReopenDept && (
+                  <ReopenControl t={t} onConfirm={(password) => onReopenDepartment(d.departmentKey, password)} />
+                )}
+                {d.signatureMode === "itemized" && d.items?.length > 0 && (
+                  <ul className="checklist-items oversight-grid-items">
+                    {d.items.map((item) => (
+                      <li key={item.key}>
+                        <span className="oversight-grid-item-label">
+                          {isAr ? item.label_ar : item.label_en}
+                        </span>
+                        <span className={`status-pill ${item.status}`}>
+                          {item.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+                        </span>
+                        <span className="oversight-grid-item-actions">
+                          {item.status === "completed" && item.evidence && (
+                            <EvidencePreview
+                              requestId={request._id}
+                              deptKey={d.departmentKey}
+                              itemKey={item.key}
+                              mimeType={item.evidence.mimeType}
+                            />
+                          )}
+                          {item.status === "completed" && onReopenItem && (
+                            <ReopenControl
+                              t={t}
+                              onConfirm={(password) => onReopenItem(d.departmentKey, item.key, password)}
+                            />
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </>
   );
 }

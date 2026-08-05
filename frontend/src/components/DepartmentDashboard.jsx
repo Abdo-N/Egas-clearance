@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { useTheme } from "../context/ThemeContext";
 import { formatDate } from "../utils/formatDate";
 import { reasonI18nKey } from "../utils/leavingReason";
 
@@ -8,6 +10,14 @@ const REASON_KEYS = ["resignation", "new_job", "retirement"];
 const OVERDUE_DAYS = 7;
 const RECENT_LIMIT = 8;
 const TOP_EMPLOYEE_DEPTS = 8;
+
+// Mirrors --chart-approved/pending/halted/locked in styles.css. Recharts sets
+// fill/stroke as raw SVG attributes (not CSS properties), which can't resolve
+// var(...) -- so the same values are duplicated here, per theme.
+const CHART_COLORS = {
+  light: { approved: "#14874e", pending: "#d6a82d", halted: "#9d1135", locked: "#2266a4", surface: "#fcfcfb" },
+  dark: { approved: "#04ab62", pending: "#a67628", halted: "#b6143f", locked: "#3c7ebe", surface: "#17251f" },
+};
 
 function monthLabel(key, lang) {
   const [year, month] = key.split("-").map(Number);
@@ -199,38 +209,76 @@ function computeCompanyStats(requests) {
 
 function StatTile({ value, label, tone }) {
   return (
-    <div className={`dept-stat-tile${tone ? ` dept-stat-tile--${tone}` : ""}`}>
-      <strong>{value}</strong>
+    <div className={`detail-stat-tile${tone ? ` detail-stat-tile--${tone}` : ""}`}>
       <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-function Donut({ segments, centerValue, centerLabel }) {
-  let cursor = 0;
-  const total = segments.reduce((sum, s) => sum + s.value, 0) || 1;
-  const stops = segments
-    .map((s) => {
-      const start = (cursor / total) * 360;
-      cursor += s.value;
-      const end = (cursor / total) * 360;
-      return `${s.color} ${start}deg ${end}deg`;
-    })
-    .join(", ");
+function ChartTooltip({ active, payload }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="egas-chart-tooltip">
+      {payload.map((entry) => (
+        <div key={entry.dataKey || entry.name}>
+          {entry.name}: <strong>{entry.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompletionRing({ pct, total, completed, caption, colors }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
 
   return (
-    <div className="donut-chart-row">
-      <div className="donut-chart" style={{ background: `conic-gradient(${stops})` }}>
-        <div className="donut-chart-center">
-          <strong>{centerValue}</strong>
-          {centerLabel && <span>{centerLabel}</span>}
+    <div className="egas-chart-card egas-ring-card">
+      <div className="egas-ring-wrap">
+        <svg viewBox="0 0 100 100">
+          <circle className="egas-ring-track" cx="50" cy="50" r={radius} />
+          <circle
+            className="egas-ring-fill"
+            cx="50"
+            cy="50"
+            r={radius}
+            stroke={colors.approved}
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - pct / 100)}
+          />
+        </svg>
+        <div className="egas-ring-value">
+          <strong>{pct}%</strong>
+          <span>
+            {completed}/{total}
+          </span>
         </div>
       </div>
-      <ul className="donut-legend">
+      <p className="egas-ring-caption">{caption}</p>
+    </div>
+  );
+}
+
+function StatusPie({ title, segments, surfaceColor }) {
+  return (
+    <div className="egas-chart-card">
+      <p className="egas-chart-card-title">{title}</p>
+      <ResponsiveContainer width="100%" height={180}>
+        <PieChart>
+          <Pie data={segments} dataKey="value" nameKey="label" innerRadius={48} outerRadius={75} paddingAngle={3}>
+            {segments.map((s) => (
+              <Cell key={s.key} fill={s.color} stroke={surfaceColor} strokeWidth={2} />
+            ))}
+          </Pie>
+          <Tooltip content={<ChartTooltip />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <ul className="egas-legend">
         {segments.map((s) => (
-          <li key={s.label}>
-            <span className="donut-legend-swatch" style={{ background: s.color }} />
-            {s.label} <strong>{s.value}</strong>
+          <li key={s.key}>
+            <span className="egas-legend-swatch" style={{ backgroundColor: s.color }} />
+            {s.label} ({s.value})
           </li>
         ))}
       </ul>
@@ -238,25 +286,32 @@ function Donut({ segments, centerValue, centerLabel }) {
   );
 }
 
-function BarList({ rows, maxValue }) {
-  const max = maxValue ?? Math.max(1, ...rows.map((r) => r.value));
+function CategoryBarChart({ title, rows, lockedColor }) {
+  const height = Math.max(140, rows.length * 34);
   return (
-    <ul className="bar-list">
-      {rows.map((r) => (
-        <li key={r.label} className="bar-list-row">
-          <span className="bar-list-label">{r.label}</span>
-          <span className="bar-track">
-            <span className="bar-fill" style={{ width: `${max ? (r.value / max) * 100 : 0}%`, background: r.color }} />
-          </span>
-          <span className="bar-list-value">{r.display ?? r.value}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="egas-chart-card">
+      <p className="egas-chart-card-title">{title}</p>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={lockedColor} opacity={0.15} horizontal={false} />
+          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: "var(--ink-700)" }} />
+          <YAxis type="category" dataKey="label" width={110} tick={{ fontSize: 11, fill: "var(--ink-700)" }} />
+          <Tooltip content={<ChartTooltip />} />
+          <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={18}>
+            {rows.map((r) => (
+              <Cell key={r.label} fill={r.color} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
 export default function DepartmentDashboard({ requests, user }) {
   const { t, i18n } = useTranslation();
+  const { theme } = useTheme();
+  const colors = CHART_COLORS[theme] || CHART_COLORS.light;
   const isAr = i18n.language === "ar";
   const isOversight = Boolean(user.hasOversightDashboard);
   const isIT = user.departmentKey === "it";
@@ -281,20 +336,24 @@ export default function DepartmentDashboard({ requests, user }) {
   const reasonRows = REASON_KEYS.map((key) => ({
     label: t(`employee.${reasonI18nKey(key)}`),
     value: stats.byReason[key],
-    color: "var(--green-700)",
+    color: colors.approved,
   }));
 
   const monthRows = stats.monthKeys.map((key) => ({
     label: monthLabel(key, i18n.language),
     value: stats.monthly[key],
-    color: "var(--gold-600)",
+    color: colors.pending,
   }));
 
-  return (
-    <div className="analytics-dashboard">
-      {useCompanyStats && <p className="analytics-dashboard-subtitle">{t("reviewer.dashboardCompanyOverview")}</p>}
+  const ringPct = stats.total > 0 ? Math.round((stats.completedCount / stats.total) * 100) : 0;
 
-      <div className="dept-stats-row">
+  return (
+    <div className="egas-dashboard">
+      <h3 className="egas-dashboard-heading">
+        {useCompanyStats ? t("reviewer.dashboardCompanyOverview") : t("reviewer.dashboardTotal")}
+      </h3>
+
+      <div className="detail-stat-row">
         <StatTile value={stats.total} label={t("reviewer.dashboardTotal")} />
         {useCompanyStats ? (
           <>
@@ -314,98 +373,89 @@ export default function DepartmentDashboard({ requests, user }) {
         <StatTile value={stats.overdueCount} label={t("reviewer.dashboardOverdue")} tone={stats.overdueCount > 0 ? "overdue" : undefined} />
       </div>
 
-      <div className="analytics-grid">
-        <div className="panel-card analytics-card">
-          <h3>{t("reviewer.dashboardStatusBreakdown")}</h3>
-          <Donut
-            centerValue={stats.total}
-            centerLabel={t("reviewer.dashboardTotal")}
-            segments={
-              useCompanyStats
-                ? [
-                    { label: t("reviewer.dashboardOverallCompleted"), value: stats.completedCount, color: "var(--green-700)" },
-                    { label: t("reviewer.dashboardOverallInProgress"), value: stats.inProgressCount, color: "var(--gold-600)" },
-                  ]
-                : [
-                    { label: t("reviewer.dashboardCompleted"), value: stats.completedCount, color: "var(--green-700)" },
-                    { label: t("reviewer.dashboardPending"), value: stats.pendingCount, color: "var(--gold-600)" },
-                    {
-                      label: t("employee.statusInProgress"),
-                      value: Math.max(0, stats.total - stats.completedCount - stats.pendingCount),
-                      color: "var(--ink-500)",
-                    },
-                  ]
-            }
-          />
-        </div>
+      <div className="egas-chart-grid">
+        <CompletionRing
+          pct={ringPct}
+          total={stats.total}
+          completed={stats.completedCount}
+          caption={t("reviewer.dashboardStatusBreakdown")}
+          colors={colors}
+        />
 
-        <div className="panel-card analytics-card">
-          <h3>{t("reviewer.dashboardReasonBreakdown")}</h3>
-          <BarList rows={reasonRows} />
-        </div>
+        <StatusPie
+          title={t("reviewer.dashboardStatusBreakdown")}
+          surfaceColor={colors.surface}
+          segments={
+            useCompanyStats
+              ? [
+                  { key: "completed", label: t("reviewer.dashboardOverallCompleted"), value: stats.completedCount, color: colors.approved },
+                  { key: "pending", label: t("reviewer.dashboardOverallInProgress"), value: stats.inProgressCount, color: colors.pending },
+                ]
+              : [
+                  { key: "completed", label: t("reviewer.dashboardCompleted"), value: stats.completedCount, color: colors.approved },
+                  { key: "pending", label: t("reviewer.dashboardPending"), value: stats.pendingCount, color: colors.pending },
+                  {
+                    key: "other",
+                    label: t("employee.statusInProgress"),
+                    value: Math.max(0, stats.total - stats.completedCount - stats.pendingCount),
+                    color: colors.locked,
+                  },
+                ]
+          }
+        />
 
-        <div className="panel-card analytics-card">
-          <h3>{t("reviewer.dashboardMonthlyTrend")}</h3>
-          <BarList rows={monthRows} />
-        </div>
+        <CategoryBarChart title={t("reviewer.dashboardReasonBreakdown")} rows={reasonRows} lockedColor={colors.locked} />
+        <CategoryBarChart title={t("reviewer.dashboardMonthlyTrend")} rows={monthRows} lockedColor={colors.locked} />
 
         {isIT && itemStats && (
-          <div className="panel-card analytics-card">
-            <h3>{t("reviewer.dashboardItemBreakdown")}</h3>
-            <BarList
-              rows={Object.values(itemStats).map((i) => ({
-                label: isAr ? i.label_ar : i.label_en,
-                value: i.completed,
-                display: `${i.completed} ${t("reviewer.dashboardOf")} ${i.total}`,
-                color: "var(--green-700)",
-              }))}
-              maxValue={Math.max(1, ...Object.values(itemStats).map((i) => i.total))}
-            />
-          </div>
+          <CategoryBarChart
+            title={t("reviewer.dashboardItemBreakdown")}
+            lockedColor={colors.locked}
+            rows={Object.values(itemStats).map((i) => ({
+              label: isAr ? i.label_ar : i.label_en,
+              value: i.completed,
+              color: colors.approved,
+            }))}
+          />
         )}
 
         {useCompanyStats && (
           <>
-            <div className="panel-card analytics-card">
-              <h3>{t("reviewer.dashboardDeptWorkload")}</h3>
-              <BarList
-                rows={stats.byDept.map(([, d]) => ({
-                  label: isAr ? d.name_ar : d.name_en,
-                  value: d.total - d.completed,
-                  color: "var(--gold-600)",
-                }))}
-              />
-            </div>
-            <div className="panel-card analytics-card">
-              <h3>{t("reviewer.dashboardDeptPerformance")}</h3>
-              <BarList
-                rows={stats.byDept.map(([, d]) => ({
-                  label: isAr ? d.name_ar : d.name_en,
-                  value: d.total ? Math.round((d.completed / d.total) * 100) : 0,
-                  display: `${d.total ? Math.round((d.completed / d.total) * 100) : 0}%`,
-                  color: "var(--green-700)",
-                }))}
-                maxValue={100}
-              />
-            </div>
+            <CategoryBarChart
+              title={t("reviewer.dashboardDeptWorkload")}
+              lockedColor={colors.locked}
+              rows={stats.byDept.map(([, d]) => ({
+                label: isAr ? d.name_ar : d.name_en,
+                value: d.total - d.completed,
+                color: colors.pending,
+              }))}
+            />
+            <CategoryBarChart
+              title={t("reviewer.dashboardDeptPerformance")}
+              lockedColor={colors.locked}
+              rows={stats.byDept.map(([, d]) => ({
+                label: isAr ? d.name_ar : d.name_en,
+                value: d.total ? Math.round((d.completed / d.total) * 100) : 0,
+                color: colors.approved,
+              }))}
+            />
           </>
         )}
 
         {stats.byEmployeeDept.length > 0 && (
-          <div className="panel-card analytics-card">
-            <h3>{t("reviewer.dashboardEmployeeDeptBreakdown")}</h3>
-            <BarList
-              rows={stats.byEmployeeDept.map((d) => ({
-                label: isAr ? d.name_ar : d.name_en,
-                value: d.count,
-                color: "var(--indigo-600)",
-              }))}
-            />
-          </div>
+          <CategoryBarChart
+            title={t("reviewer.dashboardEmployeeDeptBreakdown")}
+            lockedColor={colors.locked}
+            rows={stats.byEmployeeDept.map((d) => ({
+              label: isAr ? d.name_ar : d.name_en,
+              value: d.count,
+              color: colors.locked,
+            }))}
+          />
         )}
 
-        <div className="panel-card analytics-card analytics-card--wide">
-          <h3>{t("reviewer.dashboardRecentActivity")}</h3>
+        <div className="egas-chart-card" style={{ gridColumn: "1 / -1" }}>
+          <p className="egas-chart-card-title">{t("reviewer.dashboardRecentActivity")}</p>
           {stats.recent.length === 0 ? (
             <p>{t("reviewer.dashboardNoActivity")}</p>
           ) : (
@@ -420,11 +470,11 @@ export default function DepartmentDashboard({ requests, user }) {
                       <strong>{request.employeeFullName}</strong>
                       <small>{t(`employee.${reasonI18nKey(request.reason)}`)}</small>
                     </span>
-                    <span className={`badge ${status === "completed" ? "completed" : "pending"}`}>
+                    <span className={`status-pill ${status === "completed" ? "completed" : "pending"}`}>
                       {status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
                     </span>
-                    {request.archivedFromAD && (isIT || useCompanyStats) && (
-                      <span className="badge archived">{t("common.archivedFromAdBadge")}</span>
+                    {request.accessRevoked && (isIT || useCompanyStats) && (
+                      <span className="status-pill archived">{t("common.accessRevokedBadge")}</span>
                     )}
                     <small className="activity-list-date">
                       {formatDate(request.updatedAt || request.createdAt, i18n.language)}

@@ -11,7 +11,6 @@ const cors = require("cors");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/auth.routes");
 const departmentRoutes = require("./routes/department.routes");
-const employeeRoutes = require("./routes/employee.routes");
 const requestRoutes = require("./routes/request.routes");
 
 const app = express();
@@ -21,7 +20,6 @@ app.use(express.json());
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/departments", departmentRoutes);
-app.use("/api/employees", employeeRoutes);
 app.use("/api/requests", requestRoutes);
 
 // Basic error handler so unexpected throws return JSON instead of crashing silently.

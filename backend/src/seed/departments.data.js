@@ -8,7 +8,7 @@
  *
  * Only IT has real itemized requirements (5 items, one owned by one of IT's
  * 5 reviewer accounts each -- see users.data.js). Every other department
- * uses "single" signing: any one of its 2+ reviewers signs once and it's done.
+ * uses "single" signing: any one of its reviewers signs once and it's done.
  */
 const departments = [
   { key: "illicit_gains", name_ar: "الكسب غير مشروع", name_en: "Illicit Gains", order: 1, tier: 1, hasOversightDashboard: false, signatureMode: "single", checklistItems: [] },

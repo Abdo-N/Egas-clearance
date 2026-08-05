@@ -1,8 +1,35 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DepartmentIcon from "./DepartmentIcon";
+import EvidencePreview from "./EvidencePreview";
 import ReauthConfirmButton from "./ReauthConfirmButton";
+import PasswordInput from "./PasswordInput";
 import { formatDate } from "../utils/formatDate";
+
+// A local (not-yet-uploaded) preview of the chosen evidence file, mirroring
+// EvidencePreview.jsx's already-uploaded thumbnail -- image files get an
+// inline <img>, anything else (PDF is the common case in practice) just
+// shows the filename, since browsers can't rasterize a PDF into an <img>.
+function LocalFilePreview({ file }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (!file || !/^image\//.test(file.type)) {
+      setPreviewUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!file) return null;
+  return previewUrl ? (
+    <img className="signature-preview-thumb" src={previewUrl} alt="" />
+  ) : (
+    <p className="employee-lookup-message">{file.name}</p>
+  );
+}
 
 /**
  * Re-authentication (password) + evidence upload (photo/PDF of the physical
@@ -13,6 +40,7 @@ import { formatDate } from "../utils/formatDate";
 function SignForm({ onSubmit, busy, t }) {
   const [password, setPassword] = useState("");
   const [file, setFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -20,28 +48,41 @@ function SignForm({ onSubmit, busy, t }) {
     onSubmit({ password, file });
   }
 
+  function handleUndoUpload() {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   return (
     <form className="signature-form" onSubmit={handleSubmit}>
       <div className="form-group">
         <label>{t("signature.passwordLabel")}</label>
-        <input
-          type="password"
+        <PasswordInput
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
           required
         />
       </div>
-      <div className="form-group">
+      <div className="upload-group">
         <label>{t("signature.fileLabel")}</label>
         <input
+          ref={fileInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf"
           onChange={(e) => setFile(e.target.files[0] || null)}
           required
         />
+        {file && (
+          <>
+            <LocalFilePreview file={file} />
+            <button type="button" className="upload-undo-button" onClick={handleUndoUpload}>
+              {t("common.undoUpload")}
+            </button>
+          </>
+        )}
       </div>
-      <button type="submit" className="primary-button" disabled={busy || !password || !file}>
+      <button type="submit" className="approve-button" disabled={busy || !password || !file}>
         {busy ? t("signature.signing") : t("signature.signButton")}
       </button>
     </form>
@@ -67,7 +108,7 @@ function UndoControl({ onConfirm, t }) {
   );
 }
 
-export default function SignaturePanel({ department, user, onSign, busy, onUndo }) {
+export default function SignaturePanel({ department, user, onSign, busy, onUndo, requestId }) {
   const { i18n, t } = useTranslation();
   const isAr = i18n.language === "ar";
   const deptLabel = isAr ? department.name_ar : department.name_en;
@@ -88,16 +129,24 @@ export default function SignaturePanel({ department, user, onSign, busy, onUndo 
                 <div className="signature-item-label">
                   {isAr ? item.label_ar : item.label_en}
                   {isMine && (
-                    <span className="badge pending signature-item-mine-tag">{t("reviewer.yourItem")}</span>
+                    <span className="status-pill pending signature-item-mine-tag">{t("reviewer.yourItem")}</span>
                   )}
                 </div>
 
                 {item.status === "completed" ? (
                   <div className="signature-confirmed">
-                    <span className="badge completed">{t("reviewer.signed")}</span>
+                    <span className="status-pill completed">{t("reviewer.signed")}</span>
                     <small>
                       {item.signedByFullName} · {formatDate(item.signedAt, i18n.language)}
                     </small>
+                    {item.evidence && (
+                      <EvidencePreview
+                        requestId={requestId}
+                        deptKey={department.departmentKey}
+                        itemKey={item.key}
+                        mimeType={item.evidence.mimeType}
+                      />
+                    )}
                     {isMine && onUndo && (
                       <UndoControl t={t} onConfirm={(password) => onUndo({ itemKey: item.key, password })} />
                     )}
@@ -109,7 +158,7 @@ export default function SignaturePanel({ department, user, onSign, busy, onUndo 
                     onSubmit={({ password, file }) => onSign({ itemKey: item.key, password, file })}
                   />
                 ) : (
-                  <span className="badge pending">{t("reviewer.awaitingSignature")}</span>
+                  <span className="status-pill pending">{t("reviewer.awaitingSignature")}</span>
                 )}
               </li>
             );
@@ -132,6 +181,9 @@ export default function SignaturePanel({ department, user, onSign, busy, onUndo 
           <small>
             {department.signedByFullName} · {formatDate(department.signedAt, i18n.language)}
           </small>
+          {department.evidence && (
+            <EvidencePreview requestId={requestId} deptKey={department.departmentKey} mimeType={department.evidence.mimeType} />
+          )}
           {onUndo && <UndoControl t={t} onConfirm={(password) => onUndo({ password })} />}
         </div>
       ) : (

@@ -1,43 +1,48 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import SupportModal from "../components/SupportModal";
 import LanguageToggle from "../components/LanguageToggle";
+import PasswordInput from "../components/PasswordInput";
+import {
+  DEMO_PASSWORD,
+  demoDepartmentReviewers,
+  demoFileManagement,
+  demoItReviewers,
+} from "../demoAccounts";
 import logoUrl from "../assets/egas-logo.png";
-import { demoFileManagement, demoReviewers, demoPassword } from "../demoAccounts";
 
 // الخلفية الكبيرة للشاشة بالكامل (المنصة والغروب)
 import mainBackground from "../assets/egas-bg.jpg";
 
-const demoAccountButtonStyle = {
-  display: "block",
-  width: "100%",
-  textAlign: "inherit",
-  background: "none",
-  border: "none",
-  padding: "4px 0",
-  margin: 0,
-  fontSize: "11px",
-  color: "#008069",
-  cursor: "pointer",
-};
-
 export default function Login() {
   const { t, i18n } = useTranslation();
-  const isAr = i18n.language === "ar";
   const { login } = useAuth();
   const navigate = useNavigate();
+  const isArabic = i18n.language === "ar";
 
-  const [userID, setUserID] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showDemo, setShowDemo] = useState(false);
 
-  function fillDemo(account) {
-    setUserID(account.userID);
-    setPassword(demoPassword);
+  function fillDemoAccount(account) {
+    setEmail(account.email);
+    setPassword(DEMO_PASSWORD);
+    setError("");
+  }
+
+  function renderDemoAccount(account) {
+    return (
+      <button type="button" key={account.email} onClick={() => fillDemoAccount(account)}>
+        <span className="demo-account-identity">
+          <strong>{isArabic ? account.label_ar : account.label_en}</strong>
+          <small className="demo-account-email">{account.email}</small>
+        </span>
+        <span className="demo-account-use">{t("login.demoAccounts.use")}</span>
+      </button>
+    );
   }
 
   async function handleSubmit(e) {
@@ -45,7 +50,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const user = await login(userID, password);
+      const user = await login(email, password);
       navigate(user.role === "file_management" ? "/file-management" : "/reviewer");
     } catch (err) {
       setError(t("login.error") || "اسم المستخدم أو كلمة المرور غير صحيحة");
@@ -129,12 +134,12 @@ export default function Login() {
         <form onSubmit={handleSubmit} style={{ width: "100%" }}>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "13px", color: "#333", marginBottom: "5px", fontWeight: "500" }}>
-              {t("login.userID")}
+              {t("login.email")}
             </label>
             <input
-              type="text"
-              value={userID}
-              onChange={(e) => setUserID(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               style={{
                 width: "100%",
@@ -153,14 +158,14 @@ export default function Login() {
             <label style={{ display: "block", fontSize: "13px", color: "#333", marginBottom: "5px", fontWeight: "500" }}>
               {t("login.password")}
             </label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               style={{
                 width: "100%",
                 padding: "10px 12px",
+                paddingInlineEnd: "42px",
                 borderRadius: "6px",
                 border: "1px solid #d1d5db",
                 backgroundColor: "#eaecee",
@@ -198,70 +203,39 @@ export default function Login() {
           </button>
         </form>
 
-        {/* حسابات الديمو */}
-        <div style={{ width: "100%", marginTop: "15px" }}>
-          <button
-            onClick={() => setShowDemo(!showDemo)}
-            type="button"
-            className="login-demo-toggle-btn"
-            style={{
-              width: "100%",
-              backgroundColor: "#e2e5e8",
-              border: "none",
-              borderRadius: "6px",
-              padding: "8px 12px",
-              fontSize: "12px",
-              color: "#333",
-              textAlign: isAr ? "right" : "left",
-              cursor: "pointer"
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                transition: "transform 200ms ease",
-                transform: showDemo ? "rotate(90deg)" : "rotate(0deg)"
-              }}
-            >
-              ▶
-            </span>{" "}
-            {t("login.demoAccounts.summary")}
-          </button>
+        <details className="login-demo-accounts">
+          <summary>{t("login.demoAccounts.summary")}</summary>
+          <p className="demo-accounts-hint">{t("login.demoAccounts.hint")}</p>
 
-          <div className={`demo-panel-wrapper${showDemo ? " open" : ""}`}>
-            <div className="demo-panel-inner">
-              <div style={{ backgroundColor: "#d8dcde", padding: "10px", borderRadius: "6px", marginTop: "5px", fontSize: "11px", color: "#444" }}>
-                <strong>{t("login.demoAccounts.fileManagement")}</strong>
-                <button
-                  type="button"
-                  onClick={() => fillDemo(demoFileManagement)}
-                  className="login-demo-account-btn"
-                  style={demoAccountButtonStyle}
-                >
-                  {isAr ? demoFileManagement.label_ar : demoFileManagement.label_en} <code>({demoFileManagement.userID})</code>
-                </button>
+          <section className="demo-accounts-group">
+            <h4>{t("login.demoAccounts.fileManagement")}</h4>
+            <div className="demo-accounts-list">{renderDemoAccount(demoFileManagement)}</div>
+          </section>
 
-                <strong style={{ display: "block", marginTop: "8px" }}>{t("login.demoAccounts.departments")}</strong>
-                {demoReviewers.map((acc) => (
-                  <button
-                    type="button"
-                    key={acc.userID}
-                    onClick={() => fillDemo(acc)}
-                    className="login-demo-account-btn"
-                    style={demoAccountButtonStyle}
-                  >
-                    {isAr ? acc.label_ar : acc.label_en} <code>({acc.userID})</code>
-                  </button>
-                ))}
-
-                <p style={{ margin: "8px 0 0" }}>
-                  {t("login.demoAccounts.passwordNote")} <code>{demoPassword}</code>
-                </p>
-                <p style={{ margin: "2px 0 0", fontStyle: "italic" }}>{t("login.demoAccounts.fillHint")}</p>
-              </div>
+          <section className="demo-accounts-group">
+            <h4>{t("login.demoAccounts.departments")}</h4>
+            <div className="demo-accounts-list demo-accounts-list--scroll">
+              {demoDepartmentReviewers.map(renderDemoAccount)}
             </div>
-          </div>
-        </div>
+          </section>
+
+          <section className="demo-accounts-group">
+            <h4>{t("login.demoAccounts.it")}</h4>
+            <div className="demo-accounts-list">{demoItReviewers.map(renderDemoAccount)}</div>
+          </section>
+
+          <p className="demo-accounts-note">
+            {t("login.demoAccounts.password")} <code>{DEMO_PASSWORD}</code>
+          </p>
+        </details>
+
+        {/* رابط إنشاء حساب */}
+        <p style={{ margin: "16px 0 0", fontSize: "13px", color: "#666", textAlign: "center" }}>
+          {t("login.noAccount")}{" "}
+          <Link to="/register" style={{ color: "#008069", fontWeight: "600", textDecoration: "none" }}>
+            {t("login.createAccount")}
+          </Link>
+        </p>
       </div>
 
       <SupportModal />

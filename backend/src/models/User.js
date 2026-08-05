@@ -1,21 +1,23 @@
 const mongoose = require("mongoose");
 
 /**
- * MOCK ACTIVE DIRECTORY (staff logins only).
- * This collection stands in for EGAS's real Active Directory until real
- * LDAP access is available. Do not build business logic that assumes this
- * IS real AD -- keep the auth layer (src/routes/auth.routes.js) as the only
- * place that knows about this model, so swapping in real LDAP later only
- * touches that one file.
+ * Staff logins (File Management + department reviewers), self-registered via
+ * POST /auth/register -- see auth.routes.js. Anyone can create an account,
+ * choosing their own role/department (and, for IT, which checklist item they
+ * own) with no approval step; the only integrity rule enforced at signup is
+ * that an IT checklist item can't be claimed by more than one account.
  *
- * Employees being cleared are NOT in this collection and never log in --
- * see Employee.js for their (auth-less) directory record.
+ * Employees being cleared are NOT in this collection and never log in -- File
+ * Management enters their data directly on the clearance-request form.
  */
 const userSchema = new mongoose.Schema(
   {
-    userID: { type: String, required: true, unique: true, trim: true }, // mimics AD sAMAccountName
+    userID: { type: String, required: true, unique: true, trim: true }, // the account's email address
     passwordHash: { type: String, required: true },
     fullName: { type: String, required: true },
+    // Optional localized display name. Self-registered accounts fall back to
+    // `fullName`; deterministic demo accounts provide both languages.
+    fullName_ar: { type: String, default: null },
     role: {
       type: String,
       enum: ["file_management", "reviewer"],

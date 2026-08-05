@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import PasswordInput from "./PasswordInput";
 
 /**
  * A collapsed-by-default "re-enter your password to confirm" control --
@@ -41,8 +42,8 @@ export default function ReauthConfirmButton({ openLabel, confirmLabel, busyLabel
 
   return (
     <form className="inline-reauth-form" onSubmit={handleSubmit}>
-      <input
-        type="password"
+      <PasswordInput
+        wrapperStyle={{ flex: "0 1 180px" }}
         placeholder={t("signature.passwordLabel")}
         value={password}
         onChange={(e) => setPassword(e.target.value)}

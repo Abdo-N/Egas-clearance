@@ -2,72 +2,54 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import LanguageToggle from "../components/LanguageToggle";
+import TopBarControls from "../components/TopBarControls";
+import BusinessDoodleBg from "../components/BusinessDoodleBg";
 import SignaturePanel from "../components/SignaturePanel";
+import PasswordInput from "../components/PasswordInput";
 import RequestOversightGrid from "../components/RequestOversightGrid";
 import DepartmentDashboard from "../components/DepartmentDashboard";
 import { formatDate } from "../utils/formatDate";
 import { reasonI18nKey } from "../utils/leavingReason";
 import logoUrl from "../assets/egas-logo.png";
 
-function RequestInfo({ request, departmentLabel, t, lang }) {
+// One card in the request grid -- shows enough for a reviewer to triage
+// without opening it (reason, last working day, status), not just a bare
+// employee name.
+function RequestCard({ request, dept, t, lang, onOpen, showArchivedMarker }) {
   return (
-    <div className="request-info">
-      <div>
-        <span>{t("reviewer.employee")}</span>
-        <strong>{request.employeeFullName}</strong>
+    <article className="request-card">
+      <div className="request-card-top" style={{ justifyContent: "flex-end" }}>
+        {showArchivedMarker && request.accessRevoked && (
+          <span className="status-pill archived">{t("common.accessRevokedBadge")}</span>
+        )}
+        <span className={`status-pill ${dept?.status === "completed" ? "completed" : "pending"}`}>
+          {dept?.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
+        </span>
       </div>
-      {departmentLabel && (
+
+      <div className="request-employee">
+        <div className="employee-avatar">{request.employeeFullName.charAt(0)}</div>
         <div>
-          <span>{t("reviewer.requestInfoDepartment")}</span>
-          <strong>{departmentLabel}</strong>
+          <h4>{request.employeeFullName}</h4>
+          <p>
+            {t(`employee.${reasonI18nKey(request.reason)}`)} · {formatDate(request.lastWorkingDay, lang)}
+          </p>
         </div>
-      )}
-      <div>
-        <span>{t("reviewer.requestInfoReason")}</span>
-        <strong>{t(`employee.${reasonI18nKey(request.reason)}`)}</strong>
       </div>
-      <div>
-        <span>{t("reviewer.requestInfoLastDay")}</span>
-        <strong>{formatDate(request.lastWorkingDay, lang)}</strong>
+
+      <div className="request-actions">
+        <button className="secondary-button" style={{ flex: 1 }} type="button" onClick={() => onOpen(request._id)}>
+          {t("reviewer.open")}
+        </button>
       </div>
-      <div>
-        <span>{t("reviewer.requestInfoSubmitted")}</span>
-        <strong>{formatDate(request.createdAt, lang)}</strong>
-      </div>
-    </div>
+    </article>
   );
 }
 
-// One row in the dashboard's request list -- shows enough for a reviewer to
-// triage without opening it (reason, last working day, status), not just a
-// bare employee name.
-function RequestRow({ request, dept, t, lang, onOpen, showArchivedMarker }) {
-  return (
-    <li>
-      <span className="request-row-info">
-        <strong>{request.employeeFullName}</strong>
-        <small>
-          {t(`employee.${reasonI18nKey(request.reason)}`)} · {formatDate(request.lastWorkingDay, lang)}
-        </small>
-      </span>
-      <span className={`badge ${dept?.status === "completed" ? "completed" : "pending"}`}>
-        {dept?.status === "completed" ? t("employee.departmentCompleted") : t("employee.departmentPending")}
-      </span>
-      {showArchivedMarker && request.archivedFromAD && (
-        <span className="badge archived">{t("common.archivedFromAdBadge")}</span>
-      )}
-      <button className="secondary-button" onClick={() => onOpen(request._id)}>
-        {t("reviewer.open")}
-      </button>
-    </li>
-  );
-}
-
-// "Delete from Active Directory" -- IT's capstone action, only enabled once
-// every one of the 13 departments has signed. Just a password re-auth, no
-// file (it's a system action, not a signature).
-function ArchiveAdForm({ onSubmit, busy, t }) {
+// "Revoke access" -- IT's capstone action, only enabled once every one of
+// the 13 departments has signed. Just a password re-auth, no file (it's a
+// system action, not a signature).
+function RevokeAccessForm({ onSubmit, busy, t }) {
   const [password, setPassword] = useState("");
 
   function handleSubmit(e) {
@@ -78,12 +60,11 @@ function ArchiveAdForm({ onSubmit, busy, t }) {
   }
 
   return (
-    <form className="signature-form archive-ad-form" onSubmit={handleSubmit}>
-      <p>{t("reviewer.archiveAdHint")}</p>
+    <form className="signature-form revoke-access-form" onSubmit={handleSubmit}>
+      <p>{t("reviewer.revokeAccessHint")}</p>
       <div className="form-group">
         <label>{t("signature.passwordLabel")}</label>
-        <input
-          type="password"
+        <PasswordInput
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
@@ -91,7 +72,7 @@ function ArchiveAdForm({ onSubmit, busy, t }) {
         />
       </div>
       <button type="submit" className="reject-button" disabled={busy || !password}>
-        {busy ? t("reviewer.archiving") : t("reviewer.archiveAdButton")}
+        {busy ? t("reviewer.archiving") : t("reviewer.revokeAccessButton")}
       </button>
     </form>
   );
@@ -99,7 +80,6 @@ function ArchiveAdForm({ onSubmit, busy, t }) {
 
 export default function ReviewerDashboard() {
   const { t, i18n } = useTranslation();
-  const isAr = i18n.language === "ar";
   const { user, logout } = useAuth();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -159,10 +139,7 @@ export default function ReviewerDashboard() {
   // mistake) -- same backend routes as File Management's reopen
   // (POST .../reopen, .../items/:itemKey/reopen), just called with the
   // reviewer's own token instead of File Management's. The backend tells the
-  // two apart by role and re-checks ownership either way, so this is not a
-  // client-side-only restriction. Throws (rather than alert()ing like
-  // handleSign/handleArchive above) so ReauthConfirmButton can show the
-  // error inline next to the password field instead of a jarring popup.
+  // two apart by role, not this component.
   async function handleUndo({ itemKey, password }) {
     if (!selected || !myDept) return;
     setUndoing(true);
@@ -183,7 +160,7 @@ export default function ReviewerDashboard() {
     if (!selected) return;
     setArchiving(true);
     try {
-      await client.post(`/requests/${selected._id}/archive-ad`, { password });
+      await client.post(`/requests/${selected._id}/revoke-access`, { password });
       await reload(selected._id);
     } catch (err) {
       alert(err.response?.data?.error || t("signature.error"));
@@ -192,93 +169,128 @@ export default function ReviewerDashboard() {
     }
   }
 
+  const isAr = i18n.language === "ar";
+  const departmentTitle = isAr ? user.departmentName_ar : user.departmentName_en;
+  const displayName = isAr ? user.fullName_ar || user.fullName : user.fullName;
+
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <span className="app-brand">
-          <img src={logoUrl} alt="EGAS" />
-          <span>
+    <div className="dashboard-page">
+      <BusinessDoodleBg />
+
+      <header className="dashboard-header">
+        <div className="dashboard-brand">
+          <img src={logoUrl} alt={t("common.logoAlt")} />
+          <div>
             <strong>{t("appTitle")}</strong>
-          </span>
-        </span>
-        <div className="app-account">
-          <span>
-            <strong>{user?.fullName}</strong>
-          </span>
-          <button onClick={logout}>{t("nav.logout")}</button>
+            <span>{t("common.brandSubtitle")}</span>
+          </div>
+        </div>
+
+        <div className="employee-summary">
+          <p>{t("login.welcome")}</p>
+          <h1>{displayName}</h1>
+          <span>{departmentTitle}</span>
+        </div>
+
+        <div className="head-actions-group">
+          <TopBarControls />
+          <button className="logout-button" type="button" onClick={logout}>
+            {t("nav.logout")}
+          </button>
         </div>
       </header>
 
-      <div className="app-shell-content">
-        <div className="content-page">
-          {!selected && (
-            <>
-              <div className="page-heading">
-                <h1>{isAr ? user.departmentName_ar : user.departmentName_en}</h1>
+      <section className="dashboard-content">
+        <div className="tabs">
+          <button type="button" className="tab-button active">
+            {t("reviewer.dashboardTotal")}
+          </button>
+        </div>
+
+        {!selected && (
+          <>
+            {loading && <p className="dashboard-status-message">{t("common.loading")}</p>}
+            {!loading && requests.length === 0 && (
+              <p className="dashboard-status-message">{t("reviewer.empty")}</p>
+            )}
+
+            {!loading && requests.length > 0 && (
+              <>
+                <DepartmentDashboard requests={requests} user={user} />
+
+                {needsActionList.length > 0 && (
+                  <section className="requests-section">
+                    <div className="requests-heading">
+                      <h3>{t("reviewer.sectionNeedsAction")}</h3>
+                      <span>{needsActionList.length}</span>
+                    </div>
+                    <div className="requests-grid">
+                      {needsActionList.map((r) => (
+                        <RequestCard
+                          key={r._id}
+                          request={r}
+                          dept={myDeptOf(r)}
+                          t={t}
+                          lang={i18n.language}
+                          onOpen={setSelectedId}
+                          showArchivedMarker={isIT}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {handledList.length > 0 && (
+                  <section className="requests-section">
+                    <div className="requests-heading">
+                      <h3>{t("reviewer.sectionHandled")}</h3>
+                      <span>{handledList.length}</span>
+                    </div>
+                    <div className="requests-grid">
+                      {handledList.map((r) => (
+                        <RequestCard
+                          key={r._id}
+                          request={r}
+                          dept={myDeptOf(r)}
+                          t={t}
+                          lang={i18n.language}
+                          onOpen={setSelectedId}
+                          showArchivedMarker={isIT}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {selected && (
+          <>
+            <button className="secondary-button" onClick={() => setSelectedId(null)}>
+              &larr; {t("reviewer.backToList")}
+            </button>
+
+            <section className="detail-panel" style={{ marginTop: 16 }}>
+              <h3>{selected.employeeFullName}</h3>
+
+              <div className="detail-row">
+                <span>{t("reviewer.requestInfoDepartment")}</span>
+                <strong>{isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}</strong>
               </div>
-              {loading && <p>{t("common.loading")}</p>}
-              {!loading && requests.length === 0 && <p>{t("reviewer.empty")}</p>}
-
-              {!loading && requests.length > 0 && (
-                <>
-                  <DepartmentDashboard requests={requests} user={user} />
-
-                  {needsActionList.length > 0 && (
-                    <>
-                      <h2 className="request-list-section-title">{t("reviewer.sectionNeedsAction")}</h2>
-                      <ul className="request-list">
-                        {needsActionList.map((r) => (
-                          <RequestRow
-                            key={r._id}
-                            request={r}
-                            dept={myDeptOf(r)}
-                            t={t}
-                            lang={i18n.language}
-                            onOpen={setSelectedId}
-                            showArchivedMarker={isIT}
-                          />
-                        ))}
-                      </ul>
-                    </>
-                  )}
-
-                  {handledList.length > 0 && (
-                    <>
-                      <h2 className="request-list-section-title">{t("reviewer.sectionHandled")}</h2>
-                      <ul className="request-list">
-                        {handledList.map((r) => (
-                          <RequestRow
-                            key={r._id}
-                            request={r}
-                            dept={myDeptOf(r)}
-                            t={t}
-                            lang={i18n.language}
-                            onOpen={setSelectedId}
-                            showArchivedMarker={isIT}
-                          />
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {selected && (
-            <>
-              <button className="secondary-button" onClick={() => setSelectedId(null)}>
-                &larr; {t("reviewer.backToList")}
-              </button>
-              <div className="page-heading" style={{ marginTop: 18 }}>
-                <h1>{selected.employeeFullName}</h1>
+              <div className="detail-row">
+                <span>{t("reviewer.requestInfoReason")}</span>
+                <strong>{t(`employee.${reasonI18nKey(selected.reason)}`)}</strong>
               </div>
-              <RequestInfo
-                request={selected}
-                departmentLabel={isAr ? selected.employeeDepartment_ar : selected.employeeDepartment_en}
-                t={t}
-                lang={i18n.language}
-              />
+              <div className="detail-row">
+                <span>{t("reviewer.requestInfoLastDay")}</span>
+                <strong>{formatDate(selected.lastWorkingDay, i18n.language)}</strong>
+              </div>
+              <div className="detail-row">
+                <span>{t("reviewer.requestInfoSubmitted")}</span>
+                <strong>{formatDate(selected.createdAt, i18n.language)}</strong>
+              </div>
 
               {isOversight && <RequestOversightGrid request={selected} detail="full" />}
 
@@ -289,29 +301,29 @@ export default function ReviewerDashboard() {
                     user={user}
                     onSign={handleSign}
                     busy={signing}
-                    onUndo={!selected.archivedFromAD ? handleUndo : undefined}
+                    onUndo={!selected.accessRevoked ? handleUndo : undefined}
+                    requestId={selected._id}
                   />
                 ) : (
-                  <div className="rejection-banner">
-                    <strong>{t("reviewer.departmentLockedTitle")}</strong>
-                    <p>{t("reviewer.departmentLockedBody")}</p>
-                  </div>
+                  <p className="locked-banner">
+                    <strong>{t("reviewer.departmentLockedTitle")}</strong> — {t("reviewer.departmentLockedBody")}
+                  </p>
                 ))}
 
               {isIT &&
-                (selected.archivedFromAD ? (
+                (selected.accessRevoked ? (
                   <div className="success-banner">
-                    <strong>{t("reviewer.archivedBanner")}</strong>
+                    <strong>{t("reviewer.accessRevokedBanner")}</strong>
                   </div>
                 ) : (
                   // NOT selected.status === "completed" -- per the general
                   // rule, the request only reads as "completed" once IT has
-                  // actually deleted the employee from AD, which would make
-                  // this button impossible to ever reach. `readyForAdDeletion`
+                  // actually revoked the employee's access, which would make
+                  // this button impossible to ever reach. `readyForAccessRevocation`
                   // now requires every department signed AND File
                   // Management's explicit approval (see request.routes.js).
-                  selected.readyForAdDeletion ? (
-                    <ArchiveAdForm onSubmit={handleArchive} busy={archiving} t={t} />
+                  selected.readyForAccessRevocation ? (
+                    <RevokeAccessForm onSubmit={handleArchive} busy={archiving} t={t} />
                   ) : (
                     // Distinguishes "not everyone's signed yet" (no note --
                     // IT just sees the locked/awaiting state above) from
@@ -319,19 +331,17 @@ export default function ReviewerDashboard() {
                     // without this IT has no way to tell those apart, since
                     // they never see other departments' status.
                     selected.awaitingFileManagementApproval && (
-                      <div className="rejection-banner">
-                        <strong>{t("reviewer.awaitingFileManagementApprovalTitle")}</strong>
-                        <p>{t("reviewer.awaitingFileManagementApprovalBody")}</p>
-                      </div>
+                      <p className="locked-banner">
+                        <strong>{t("reviewer.awaitingFileManagementApprovalTitle")}</strong> —{" "}
+                        {t("reviewer.awaitingFileManagementApprovalBody")}
+                      </p>
                     )
                   )
                 ))}
-            </>
-          )}
-        </div>
-      </div>
-
-      <LanguageToggle />
+            </section>
+          </>
+        )}
+      </section>
     </div>
   );
 }

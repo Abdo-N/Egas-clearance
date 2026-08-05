@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-08-04 (fixed a File-Management-visibility bug, real PDF
-evidence embedding, and self-undo for reviewers, by Nader + Claude).
+Last updated: 2026-08-04 (reviewers can now preview their own department's
+signed evidence too, by Nader + Claude).
 Update this file whenever a task moves — don't let it go stale.
 
 ## Done
@@ -661,6 +661,29 @@ Update this file whenever a task moves — don't let it go stale.
       oversight/File-Management detail grid's banner, IT's own recent-activity
       rows) is unchanged -- that's a status indicator on a specific request,
       not an aggregate statistic, and wasn't what was asked to go.
+- [x] **Reviewers can now preview their own department's signed evidence,
+      not just File Management/oversight (2026-08-04).** The backend already
+      allowed this -- `GET /requests/:id/evidence/:deptKey` has always let
+      any reviewer view evidence for their own `departmentKey`, and
+      `redactToOwnDepartment()` never stripped `evidence` off the one
+      department entry it keeps -- but `SignaturePanel.jsx` never rendered
+      it, only the signer name/date once signed. Extracted `EvidencePreview`
+      out of `RequestOversightGrid.jsx` into its own
+      `frontend/src/components/EvidencePreview.jsx` (same reasoning as the
+      earlier `ReauthConfirmButton` extraction -- a second real use beats
+      threading more props through the oversight-grid-specific component)
+      and added it to both of `SignaturePanel.jsx`'s "already signed" states:
+      the single-mode success banner, and each itemized IT item's
+      confirmation block. For itemized items the preview shows regardless of
+      whether it's the viewing reviewer's own assigned item (matching the
+      existing pattern where any IT reviewer already sees every item's
+      signer/status, not just their own) -- only the Undo control stays
+      restricted to the assigned reviewer. Needed threading a `requestId`
+      prop into `SignaturePanel` (sourced from `ReviewerDashboard.jsx`'s
+      `selected._id`) since the evidence route is scoped per-request.
+      Verified live for both a single-mode department (security) and an
+      itemized IT item (phone) -- each reviewer's own panel now shows their
+      thumbnail right next to the signed banner/confirmation.
 
 ## Team update
 

@@ -4,7 +4,6 @@ const fs = require("fs");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const Department = require("../models/Department");
-const Employee = require("../models/Employee");
 const User = require("../models/User");
 const ClearanceRequest = require("../models/ClearanceRequest");
 const { requireAuth, requireRole, requireOwnDepartment } = require("../middleware/auth.middleware");
@@ -43,21 +42,21 @@ const upload = multer({
 // Every one of the 13 departments has signed -- necessary, but NOT
 // sufficient, for the request to count as "completed" (see
 // computeOverallStatus below). This is its own helper because it also gates
-// archive-ad and is exposed to reviewers as `readyForAdDeletion` so IT knows
-// when the delete-from-AD action becomes available without needing
+// revoke-access and is exposed to reviewers as `readyForAccessRevocation` so IT knows
+// when the revoke-access action becomes available without needing
 // visibility into every other department's status.
 function allDepartmentsSigned(departments) {
   return departments.every((d) => d.status === "completed");
 }
 
 // General rule: an employee is never actually "cleared" just because every
-// department signed off -- IT deleting them from Active Directory is the
+// department signed off -- IT revoking their system access is the
 // real final step, not a formality after the fact. `status` only becomes
 // "completed" once BOTH are true; until then (even with all 13 departments
 // showing "completed") it stays "in_progress". No more "rejected" state now
 // that reject/hold has been dropped entirely.
-function computeOverallStatus(departments, archivedFromAD) {
-  return allDepartmentsSigned(departments) && archivedFromAD ? "completed" : "in_progress";
+function computeOverallStatus(departments, accessRevoked) {
+  return allDepartmentsSigned(departments) && accessRevoked ? "completed" : "in_progress";
 }
 
 // Tier-based locking (replaces the old full-chain order lock): a department
@@ -86,17 +85,17 @@ function canSeeFull(user) {
 // slice of a request, never what other departments have signed. Also tags
 // that entry with `needsAction` so the reviewer's dashboard can show "waiting
 // on you" vs "already signed" without re-deriving the rule client-side.
-// `readyForAdDeletion` now requires BOTH every department signed AND File
-// Management's explicit approval (see approve-ad-deletion route) -- neither
+// `readyForAccessRevocation` now requires BOTH every department signed AND File
+// Management's explicit approval (see approve-clearance route) -- neither
 // alone is enough for IT's delete button to appear. `awaitingFileManagementApproval`
 // distinguishes, for IT's own UI, "not everyone's signed yet" from "signed,
 // but File Management hasn't reviewed it yet" -- without it, IT has no way
 // to tell those two apart since they never see other departments' status.
-function adDeletionFlags(obj) {
+function accessRevocationFlags(obj) {
   const allSigned = allDepartmentsSigned(obj.departments);
   return {
-    readyForAdDeletion: allSigned && Boolean(obj.fileManagementApproved),
-    awaitingFileManagementApproval: allSigned && !obj.fileManagementApproved && !obj.archivedFromAD,
+    readyForAccessRevocation: allSigned && Boolean(obj.fileManagementApproved),
+    awaitingFileManagementApproval: allSigned && !obj.fileManagementApproved && !obj.accessRevoked,
   };
 }
 
@@ -105,8 +104,8 @@ function redactToOwnDepartment(request, user) {
   // Computed from the full (pre-redaction) departments array -- these flags
   // don't leak which specific other departments are done, so they're safe to
   // hand to any reviewer, but they're what IT's UI needs to know when the
-  // delete-from-AD action becomes available.
-  const flags = adDeletionFlags(obj);
+  // revoke-access action becomes available.
+  const flags = accessRevocationFlags(obj);
   const own = obj.departments.find((d) => d.departmentKey === user.departmentKey);
   if (!own) return { ...obj, departments: [], ...flags };
   // Locked-but-still-"pending" must NOT read as needsAction=true -- matters
@@ -125,7 +124,7 @@ function withOwnDepartmentAnnotated(request, user) {
   const obj = request.toObject ? request.toObject() : request;
   return {
     ...obj,
-    ...adDeletionFlags(obj),
+    ...accessRevocationFlags(obj),
     departments: obj.departments.map((d) => {
       if (d.departmentKey !== user.departmentKey) return d;
       const needsAction = isDepartmentUnlocked(obj.departments, user.departmentKey) && isPendingForReviewer(d, user);
@@ -141,7 +140,7 @@ function withOwnDepartmentAnnotated(request, user) {
 // signs, its uploaded photo/file rides along right next to that status, the
 // same moment wages/finance oversight would see it -- File Management
 // doesn't have to wait for full completion or their own
-// approve-ad-deletion step to spot-check legibility. Still never a signer's
+// approve-clearance step to spot-check legibility. Still never a signer's
 // name, though.
 function summarizeForFileManagement(request) {
   const obj = request.toObject ? request.toObject() : request;
@@ -149,10 +148,10 @@ function summarizeForFileManagement(request) {
     ...obj,
     // Lets File Management's UI distinguish "still waiting on some
     // department" from "every department signed, now just waiting on File
-    // Management to approve / IT to delete from AD" -- both currently read
+    // Management to approve / IT to revoke access" -- both currently read
     // as the same "in_progress" status otherwise, which is exactly what made
     // this confusing.
-    ...adDeletionFlags(obj),
+    ...accessRevocationFlags(obj),
     departments: obj.departments.map((d) => ({
       departmentKey: d.departmentKey,
       name_ar: d.name_ar,
@@ -202,15 +201,30 @@ async function verifyPassword(userID, password) {
 }
 
 /**
- * FILE MANAGEMENT: file a new clearance request on behalf of an employee
- * looked up from the (seed-only, mock-AD-stand-in) Employee directory.
- * Snapshots every department's current template onto the request so later
- * template edits don't retroactively change requests already in flight.
+ * FILE MANAGEMENT: file a new clearance request. The employee's data is
+ * entered directly here (no directory to look up -- see CLAUDE.md). Snapshots
+ * every department's current template onto the request so later template
+ * edits don't retroactively change requests already in flight.
  */
 router.post("/", requireAuth, requireRole("file_management"), asyncHandler(async (req, res) => {
-  const { employeeNumber, reason, lastWorkingDay } = req.body;
+  const {
+    employeeFullName,
+    employeeNumber,
+    employeeJobTitle,
+    employeeDepartment_ar,
+    employeeDepartment_en,
+    reason,
+    lastWorkingDay,
+  } = req.body;
+
   if (!employeeNumber || !employeeNumber.trim()) {
     return res.status(400).json({ error: "'employeeNumber' is required" });
+  }
+  if (!employeeFullName || !employeeFullName.trim()) {
+    return res.status(400).json({ error: "'employeeFullName' is required" });
+  }
+  if (!employeeDepartment_ar?.trim() && !employeeDepartment_en?.trim()) {
+    return res.status(400).json({ error: "'employeeDepartment_ar' or 'employeeDepartment_en' is required" });
   }
   if (!ClearanceRequest.LEAVING_REASONS.includes(reason)) {
     return res.status(400).json({
@@ -228,13 +242,8 @@ router.post("/", requireAuth, requireRole("file_management"), asyncHandler(async
     return res.status(400).json({ error: "'lastWorkingDay' cannot be in the past" });
   }
 
-  const employee = await Employee.findOne({ employeeNumber: employeeNumber.trim() });
-  if (!employee) {
-    return res.status(404).json({ error: "No employee found with that employee number" });
-  }
-
   const existing = await ClearanceRequest.findOne({
-    employeeNumber: employee.employeeNumber,
+    employeeNumber: employeeNumber.trim(),
     status: "in_progress",
   });
   if (existing) {
@@ -247,11 +256,11 @@ router.post("/", requireAuth, requireRole("file_management"), asyncHandler(async
   }
 
   const request = await ClearanceRequest.create({
-    employeeNumber: employee.employeeNumber,
-    employeeFullName: employee.fullName,
-    employeeJobTitle: employee.jobTitle,
-    employeeDepartment_ar: employee.department_ar,
-    employeeDepartment_en: employee.department_en,
+    employeeNumber: employeeNumber.trim(),
+    employeeFullName: employeeFullName.trim(),
+    employeeJobTitle: employeeJobTitle?.trim() || "",
+    employeeDepartment_ar: employeeDepartment_ar?.trim() || "",
+    employeeDepartment_en: employeeDepartment_en?.trim() || "",
     reason,
     lastWorkingDay: parsedLastWorkingDay,
     createdByUserID: req.user.userID,
@@ -343,7 +352,7 @@ router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
  * REVIEWER: sign off a single-signature department -- re-enter your own
  * password (re-authentication, same logged-in identity) and upload a photo
  * or PDF of the physical signature/stamp, fresh for this request. Any one
- * of the department's 2+ reviewers signing is enough.
+ * of the department's reviewers signing is enough.
  */
 router.post(
   "/:id/departments/:deptKey/sign",
@@ -387,8 +396,8 @@ router.post(
     // Signing never completes the request by itself -- see
     // computeOverallStatus. This only ever flips back to "in_progress" here
     // (e.g. re-evaluating after a late sign), never to "completed"; only
-    // archive-ad can do that.
-    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    // revoke-access can do that.
+    request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
     res.json(redactToOwnDepartment(request, req.user));
@@ -449,7 +458,7 @@ router.post(
       dept.status = "completed";
     }
 
-    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
     res.json(redactToOwnDepartment(request, req.user));
@@ -481,11 +490,11 @@ function revokeApproval(request) {
  * so any of that department's reviewers can sign again, same eligibility
  * rule as the first time. Two different callers, same effect:
  *   - FILE MANAGEMENT, for a request THEY filed -- e.g. they spotted it while
- *     reviewing before approving AD deletion (see approve-ad-deletion below).
- *   - The signing department's OWN reviewers (any of the 2+, not just
+ *     reviewing before approving the clearance (see approve-clearance below).
+ *   - The signing department's OWN reviewers (any account in it, not just
  *     whoever originally signed it) -- e.g. they realize right away they
  *     uploaded the wrong file, without needing to loop in File Management.
- * Either way, only before the request has been archived from AD (that's the
+ * Either way, only before the request's access has been revoked (that's the
  * one truly final step -- see CLAUDE.md).
  */
 router.post(
@@ -504,7 +513,7 @@ router.post(
     if (!isFilingFileManagement && !isOwnDepartmentReviewer) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    if (request.archivedFromAD) {
+    if (request.accessRevoked) {
       return res.status(409).json({ error: "This request has already been completed and cannot be reopened" });
     }
 
@@ -520,7 +529,7 @@ router.post(
 
     clearSignature(dept);
     revokeApproval(request);
-    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
     res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
@@ -535,7 +544,7 @@ router.post(
  * callers: File Management (their own filed request), or -- new -- the ONE
  * reviewer that item is permanently assigned to (matching the same
  * assignedItemKey check the sign route uses; unlike single-mode departments,
- * an itemized item isn't "any of 2+ reviewers", so no other IT reviewer can
+ * an itemized item isn't "any reviewer in the department", so no other IT reviewer can
  * undo someone else's item).
  */
 router.post(
@@ -554,7 +563,7 @@ router.post(
     if (!isFilingFileManagement && !isOwnItemReviewer) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    if (request.archivedFromAD) {
+    if (request.accessRevoked) {
       return res.status(409).json({ error: "This request has already been completed and cannot be reopened" });
     }
 
@@ -574,7 +583,7 @@ router.post(
     clearSignature(item);
     dept.status = "pending";
     revokeApproval(request);
-    request.status = computeOverallStatus(request.departments, request.archivedFromAD);
+    request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
     res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
@@ -584,12 +593,12 @@ router.post(
 /**
  * FILE MANAGEMENT: sign off that every department's evidence has been
  * reviewed and is legible, once all 13 have signed. This is the human
- * checkpoint the delete-from-AD action is gated on -- IT can't delete the
- * employee from Active Directory until File Management gives this explicit
- * OK, in addition to every department having signed (see archive-ad below).
+ * checkpoint the revoke-access action is gated on -- IT can't revoke the
+ * employee's access until File Management gives this explicit OK, in
+ * addition to every department having signed (see revoke-access below).
  */
 router.post(
-  "/:id/approve-ad-deletion",
+  "/:id/approve-clearance",
   requireAuth,
   requireRole("file_management"),
   asyncHandler(async (req, res) => {
@@ -599,8 +608,8 @@ router.post(
     const request = await ClearanceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ error: "Not found" });
     if (request.createdByUserID !== req.user.userID) return res.status(403).json({ error: "Forbidden" });
-    if (request.archivedFromAD) {
-      return res.status(409).json({ error: "This employee has already been deleted from Active Directory" });
+    if (request.accessRevoked) {
+      return res.status(409).json({ error: "This employee's access has already been revoked" });
     }
     if (!allDepartmentsSigned(request.departments)) {
       return res.status(400).json({ error: "Every department must sign before this request can be approved" });
@@ -622,7 +631,7 @@ router.post(
 );
 
 /**
- * REVIEWER (IT only): delete the employee from Active Directory. The real
+ * REVIEWER (IT only): revoke the employee's system access. The real
  * final step of clearance -- only enabled once every one of the 13
  * departments has signed, independent of IT's own position (#10) in the
  * paper order. Any of IT's 5 reviewers may trigger it, re-authenticating the
@@ -631,9 +640,9 @@ router.post(
  * isn't actually cleared just because every department signed off, signing
  * routes never do (see computeOverallStatus).
  */
-router.post("/:id/archive-ad", requireAuth, requireRole("reviewer"), asyncHandler(async (req, res) => {
+router.post("/:id/revoke-access", requireAuth, requireRole("reviewer"), asyncHandler(async (req, res) => {
   if (req.user.departmentKey !== "it") {
-    return res.status(403).json({ error: "Only IT can delete an employee from Active Directory" });
+    return res.status(403).json({ error: "Only IT can revoke an employee's access" });
   }
   const { password } = req.body;
   if (!password) return res.status(400).json({ error: "'password' is required" });
@@ -642,30 +651,25 @@ router.post("/:id/archive-ad", requireAuth, requireRole("reviewer"), asyncHandle
   if (!request) return res.status(404).json({ error: "Not found" });
 
   if (!allDepartmentsSigned(request.departments)) {
-    return res.status(400).json({ error: "Every department must sign before deleting from Active Directory" });
+    return res.status(400).json({ error: "Every department must sign before access can be revoked" });
   }
   if (!request.fileManagementApproved) {
-    return res.status(400).json({ error: "File Management must approve this request before deleting from Active Directory" });
+    return res.status(400).json({ error: "File Management must approve this request before access can be revoked" });
   }
-  if (request.archivedFromAD) {
-    return res.status(409).json({ error: "This employee has already been deleted from Active Directory" });
+  if (request.accessRevoked) {
+    return res.status(409).json({ error: "This employee's access has already been revoked" });
   }
 
   const passwordOk = await verifyPassword(req.user.userID, password);
   if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
 
   const now = new Date();
-  request.archivedFromAD = true;
-  request.archivedAt = now;
-  request.archivedByUserID = req.user.userID;
+  request.accessRevoked = true;
+  request.accessRevokedAt = now;
+  request.accessRevokedByUserID = req.user.userID;
   request.status = computeOverallStatus(request.departments, true);
   request.completedAt = now;
   await request.save();
-
-  await Employee.findOneAndUpdate(
-    { employeeNumber: request.employeeNumber },
-    { archivedFromAD: true, archivedAt: now }
-  );
 
   res.json(redactToOwnDepartment(request, req.user));
 }));
@@ -703,7 +707,7 @@ router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (
 // department has signed -- before that it would leak per-department progress
 // beyond their high view, but once all 13 are in there's no partial picture
 // left to leak. This is also how File Management is meant to actually check
-// evidence legibility before approving AD deletion (see approve-ad-deletion
+// evidence legibility before approving the clearance (see approve-clearance
 // above) -- they never get per-department evidence any other way.
 router.get("/:id/pdf", requireAuth, requireRole("file_management", "reviewer"), asyncHandler(async (req, res) => {
   const request = await ClearanceRequest.findById(req.params.id);

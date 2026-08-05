@@ -81,18 +81,18 @@ const clearanceRequestSchema = new mongoose.Schema(
     departments: { type: [requestDepartmentSchema], default: [] },
     completedAt: { type: Date, default: null },
     // File Management's explicit sign-off that every department's evidence
-    // is legible, given once all 13 have signed (POST /:id/approve-ad-deletion)
-    // -- IT's archive-ad route requires this in addition to allDepartmentsSigned().
+    // is legible, given once all 13 have signed (POST /:id/approve-clearance)
+    // -- IT's revoke-access route requires this in addition to allDepartmentsSigned().
     // Reopening any department/item (see .../reopen routes) resets this back
     // to false, since it re-approves a signature set that no longer exists.
     fileManagementApproved: { type: Boolean, default: false },
     fileManagementApprovedAt: { type: Date, default: null },
     fileManagementApprovedByUserID: { type: String, default: null },
-    // Set only by the explicit IT "Delete from Active Directory" action
-    // (POST /:id/archive-ad), never implicitly on completion.
-    archivedFromAD: { type: Boolean, default: false },
-    archivedAt: { type: Date, default: null },
-    archivedByUserID: { type: String, default: null },
+    // Set only by the explicit IT "revoke system access" action
+    // (POST /:id/revoke-access), never implicitly on completion.
+    accessRevoked: { type: Boolean, default: false },
+    accessRevokedAt: { type: Date, default: null },
+    accessRevokedByUserID: { type: String, default: null },
   },
   { timestamps: true }
 );
