@@ -118,6 +118,14 @@ const IMAGE_PADDING = 2;
 const WHITE = 235; // pixels this light or lighter count as "background", not ink
 const INK = 180; // pixels this dark or darker stay fully opaque when stripping the background
 
+// The paper form's signer-name cell is intentionally narrow. Keep the full
+// account name on the request for audit purposes, but render only its first
+// two whitespace-separated parts in the PDF so the name remains readable.
+function signerNameForPdf(fullName) {
+  if (!fullName) return null;
+  return String(fullName).trim().split(/\s+/u).slice(0, 2).join(" ");
+}
+
 // Trims the RGBA buffer down to the bounding box of non-near-white content,
 // plus a small margin. Evidence that's a whole scanned/exported page --
 // common for a PDF upload, where the actual ink might occupy only a small
@@ -314,10 +322,10 @@ async function generateClearancePdf(request) {
     // the paper's own top-of-form employee fields aren't filled in by this
     // generator, but the "الاسم" column next to each department's row is a
     // signer-name column on the real form.
-    drawCellText(page, font, signerName, COLUMNS.name, row);
+    drawCellText(page, font, signerNameForPdf(signerName), COLUMNS.name, row);
   }
 
   return Buffer.from(await pdfDoc.save());
 }
 
-module.exports = { generateClearancePdf };
+module.exports = { generateClearancePdf, signerNameForPdf };

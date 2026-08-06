@@ -86,6 +86,7 @@ async function login(email, password = DEMO_PASSWORD) {
 async function registerAllAccounts() {
   const tokens = {};
   tokens.fileManagement = await register({ slug: "file-management", fullName: "File Management", role: "file_management" });
+  tokens.sharedFileManagement = await login("file.management@demo.local");
 
   for (const deptKey of [...NON_IT_TIER1_KEYS, "wages", "finance"]) {
     tokens[`${deptKey}1`] = await login(`${deptKey}@demo.local`);
@@ -159,6 +160,18 @@ async function main() {
   const requestId = request._id;
   console.log(`created request ${requestId} for employee #${request.employeeNumber}`);
   assert(request.departments.length === 13, "expected 13 snapshotted departments");
+
+  console.log("--- a different File Management account sees the new request in the shared queue ---");
+  const sharedFileMgmtToken = tokens.sharedFileManagement;
+  const sharedQueueRes = await fetch(`${BASE}/requests`, {
+    headers: { Authorization: `Bearer ${sharedFileMgmtToken}` },
+  });
+  const sharedQueue = await sharedQueueRes.json();
+  assert(sharedQueueRes.status === 200, "expected the shared File Management queue to load");
+  assert(
+    sharedQueue.some((entry) => entry._id === requestId),
+    "expected a request filed by another File Management account in the shared queue"
+  );
 
   console.log("--- tier 2 (wages) is locked before tier 1 has finished (409) ---");
   const wagesToken = tokens.wages1;
@@ -253,7 +266,7 @@ async function main() {
   if (financeSign.status !== 200) throw new Error(`failed to sign finance: ${JSON.stringify(financeJson)}`);
 
   console.log("--- all 13 signed, but NOT yet 'completed' -- revoking access is the real final step ---");
-  const finalGet = await fetch(`${BASE}/requests/${requestId}`, { headers: { Authorization: `Bearer ${fileMgmtToken}` } });
+  const finalGet = await fetch(`${BASE}/requests/${requestId}`, { headers: { Authorization: `Bearer ${sharedFileMgmtToken}` } });
   const finalRequest = await finalGet.json();
   assert(finalRequest.status === "in_progress", `expected 'in_progress' until access is revoked, got '${finalRequest.status}'`);
   assert(
@@ -273,12 +286,12 @@ async function main() {
   assert(itPreApprovalJson.departments.length === 1, "IT should still only see its own department");
 
   console.log("--- File Management CAN preview the PDF now -- every department signed, nothing partial left to leak ---");
-  const pdfBeforeApproval = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${fileMgmtToken}` } });
+  const pdfBeforeApproval = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${sharedFileMgmtToken}` } });
   assert(pdfBeforeApproval.status === 200, "expected 200 previewing the PDF once every department has signed");
 
   console.log("--- File Management CAN view a signed department's evidence directly, before approving (how they'd catch an unclear signature) ---");
   const evidenceBeforeApproval = await fetch(`${BASE}/requests/${requestId}/evidence/wages`, {
-    headers: { Authorization: `Bearer ${fileMgmtToken}` },
+    headers: { Authorization: `Bearer ${sharedFileMgmtToken}` },
   });
   assert(evidenceBeforeApproval.status === 200, "expected 200 viewing a signed department's evidence as File Management before approval");
 
@@ -294,8 +307,8 @@ async function main() {
   const securityToken = tokens.security1;
   const reopenRes = await fetch(`${BASE}/requests/${requestId}/departments/security/reopen`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileMgmtToken}` },
-    body: JSON.stringify({ password: PASSWORD }),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sharedFileMgmtToken}` },
+    body: JSON.stringify({ password: DEMO_PASSWORD }),
   });
   const reopenJson = await reopenRes.json();
   if (reopenRes.status !== 200) throw new Error(`reopen failed: ${JSON.stringify(reopenJson)}`);
@@ -312,8 +325,8 @@ async function main() {
   console.log("--- File Management approves now that all 13 have signed again ---");
   const approveRes = await fetch(`${BASE}/requests/${requestId}/approve-clearance`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileMgmtToken}` },
-    body: JSON.stringify({ password: PASSWORD }),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sharedFileMgmtToken}` },
+    body: JSON.stringify({ password: DEMO_PASSWORD }),
   });
   const approveJson = await approveRes.json();
   if (approveRes.status !== 200) throw new Error(`approve-clearance failed: ${JSON.stringify(approveJson)}`);
@@ -326,7 +339,7 @@ async function main() {
 
   console.log("--- File Management can still view evidence after approving too ---");
   const evidenceAfterApproval = await fetch(`${BASE}/requests/${requestId}/evidence/wages`, {
-    headers: { Authorization: `Bearer ${fileMgmtToken}` },
+    headers: { Authorization: `Bearer ${sharedFileMgmtToken}` },
   });
   assert(evidenceAfterApproval.status === 200, "expected 200 viewing evidence as File Management after approval");
 
@@ -377,9 +390,9 @@ async function main() {
   assert(pdfAsOversight.status === 200, "expected 200 fetching PDF as oversight reviewer");
   assert(pdfAsOversight.headers.get("content-type") === "application/pdf", "expected application/pdf content type");
 
-  console.log("--- File Management can fetch the PDF now that their own request is completed ---");
+  console.log("--- any File Management account can fetch a completed request's PDF ---");
   const pdfAsFileMgmt = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${fileMgmtToken}` } });
-  assert(pdfAsFileMgmt.status === 200, "expected 200 fetching PDF as File Management on their own completed request");
+  assert(pdfAsFileMgmt.status === 200, "expected 200 fetching a completed PDF as File Management");
 
   console.log("--- a plain (non-oversight) reviewer cannot fetch the PDF (403) ---");
   const pdfAsPlain = await fetch(`${BASE}/requests/${requestId}/pdf`, { headers: { Authorization: `Bearer ${securityToken}` } });

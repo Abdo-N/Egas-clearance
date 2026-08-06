@@ -135,7 +135,8 @@ function withOwnDepartmentAnnotated(request, user) {
 
 // File Management's "high view": which of the 13 departments are done vs
 // still pending, with no signer identity or timestamps -- just enough to
-// track where a request they filed is stuck. Evidence itself is a
+// track where any request in File Management's shared queue is stuck.
+// Evidence itself is a
 // deliberate, narrow exception to that: as soon as a department (or IT item)
 // signs, its uploaded photo/file rides along right next to that status, the
 // same moment wages/finance oversight would see it -- File Management
@@ -291,8 +292,8 @@ router.post("/", requireAuth, requireRole("file_management"), asyncHandler(async
 
 /**
  * Oversight (wages, finance) reviewers: every request, full per-department
- * detail. File Management: only requests THEY filed, high-level progress
- * only (no signer identity/evidence). Every other reviewer: every request
+ * detail. File Management: every request in its shared queue, high-level
+ * progress with evidence but no signer identity. Every other reviewer: every request
  * that's ever been unlocked for their department -- both still waiting on
  * them (`needsAction: true`) and already signed -- redacted to that one
  * department. This is what backs each reviewer's dashboard (not just a
@@ -306,8 +307,8 @@ router.get("/", requireAuth, requireRole("file_management", "reviewer"), asyncHa
   }
 
   if (req.user.role === "file_management") {
-    const mine = await ClearanceRequest.find({ createdByUserID: req.user.userID }).sort({ createdAt: -1 });
-    return res.json(mine.map(summarizeForFileManagement));
+    const all = await ClearanceRequest.find().sort({ createdAt: -1 });
+    return res.json(all.map(summarizeForFileManagement));
   }
 
   const mine = await ClearanceRequest.find({
@@ -332,9 +333,6 @@ router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   if (canSeeFull(req.user)) return res.json(withOwnDepartmentAnnotated(request, req.user));
 
   if (req.user.role === "file_management") {
-    if (request.createdByUserID !== req.user.userID) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
     return res.json(summarizeForFileManagement(request));
   }
 
@@ -489,8 +487,9 @@ function revokeApproval(request) {
  * unclear (wrong file, illegible photo, etc.) -- resets it back to unsigned
  * so any of that department's reviewers can sign again, same eligibility
  * rule as the first time. Two different callers, same effect:
- *   - FILE MANAGEMENT, for a request THEY filed -- e.g. they spotted it while
- *     reviewing before approving the clearance (see approve-clearance below).
+ *   - FILE MANAGEMENT, for any request in the shared queue -- e.g. they
+ *     spotted it while reviewing before approving the clearance (see
+ *     approve-clearance below).
  *   - The signing department's OWN reviewers (any account in it, not just
  *     whoever originally signed it) -- e.g. they realize right away they
  *     uploaded the wrong file, without needing to loop in File Management.
@@ -508,9 +507,9 @@ router.post(
     const request = await ClearanceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ error: "Not found" });
 
-    const isFilingFileManagement = req.user.role === "file_management" && request.createdByUserID === req.user.userID;
+    const isFileManagement = req.user.role === "file_management";
     const isOwnDepartmentReviewer = req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey;
-    if (!isFilingFileManagement && !isOwnDepartmentReviewer) {
+    if (!isFileManagement && !isOwnDepartmentReviewer) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (request.accessRevoked) {
@@ -532,7 +531,7 @@ router.post(
     request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
-    res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
+    res.json(isFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
   })
 );
 
@@ -541,7 +540,7 @@ router.post(
  * out unclear. Same idea as the department-level reopen above, just scoped
  * to one item -- if the department had completed (all 5 items signed), it
  * goes back to "pending" too since one item is now unsigned again. Same two
- * callers: File Management (their own filed request), or -- new -- the ONE
+ * callers: File Management (any request in its shared queue), or the ONE
  * reviewer that item is permanently assigned to (matching the same
  * assignedItemKey check the sign route uses; unlike single-mode departments,
  * an itemized item isn't "any reviewer in the department", so no other IT reviewer can
@@ -558,9 +557,9 @@ router.post(
     const request = await ClearanceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ error: "Not found" });
 
-    const isFilingFileManagement = req.user.role === "file_management" && request.createdByUserID === req.user.userID;
+    const isFileManagement = req.user.role === "file_management";
     const isOwnItemReviewer = req.user.role === "reviewer" && req.user.assignedItemKey === req.params.itemKey;
-    if (!isFilingFileManagement && !isOwnItemReviewer) {
+    if (!isFileManagement && !isOwnItemReviewer) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (request.accessRevoked) {
@@ -586,7 +585,7 @@ router.post(
     request.status = computeOverallStatus(request.departments, request.accessRevoked);
     await request.save();
 
-    res.json(isFilingFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
+    res.json(isFileManagement ? summarizeForFileManagement(request) : redactToOwnDepartment(request, req.user));
   })
 );
 
@@ -607,7 +606,6 @@ router.post(
 
     const request = await ClearanceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ error: "Not found" });
-    if (request.createdByUserID !== req.user.userID) return res.status(403).json({ error: "Forbidden" });
     if (request.accessRevoked) {
       return res.status(409).json({ error: "This employee's access has already been revoked" });
     }
@@ -675,8 +673,8 @@ router.post("/:id/revoke-access", requireAuth, requireRole("reviewer"), asyncHan
 }));
 
 // Streams a stored evidence file. Oversight reviewers and the department
-// that produced it can always view it. File Management can too, but only
-// for a request THEY filed -- narrow, deliberate exception to their usual
+// that produced it can always view it. File Management can too for every
+// request in its shared queue -- a deliberate exception to their usual
 // "status only, no evidence" restriction (see summarizeForFileManagement),
 // available as soon as that department/item signs rather than waiting for
 // the whole request to finish and get approved.
@@ -687,7 +685,7 @@ router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (
   const canView =
     canSeeFull(req.user) ||
     (req.user.role === "reviewer" && req.user.departmentKey === req.params.deptKey) ||
-    (req.user.role === "file_management" && request.createdByUserID === req.user.userID);
+    req.user.role === "file_management";
   if (!canView) return res.status(403).json({ error: "Forbidden" });
 
   const dept = request.departments.find((d) => d.departmentKey === req.params.deptKey);
@@ -703,8 +701,8 @@ router.get("/:id/evidence/:deptKey/:itemKey?", requireAuth, asyncHandler(async (
 
 // Generates the composited signature PDF on demand. Oversight reviewers can
 // pull it at any time (a live preview of whatever's signed so far). File
-// Management can only pull it for a request THEY filed, and only once every
-// department has signed -- before that it would leak per-department progress
+// Management can pull it for any request in its shared queue, but only once
+// every department has signed -- before that it would leak per-department progress
 // beyond their high view, but once all 13 are in there's no partial picture
 // left to leak. This is also how File Management is meant to actually check
 // evidence legibility before approving the clearance (see approve-clearance
@@ -715,9 +713,7 @@ router.get("/:id/pdf", requireAuth, requireRole("file_management", "reviewer"), 
 
   const allowed =
     canSeeFull(req.user) ||
-    (req.user.role === "file_management" &&
-      request.createdByUserID === req.user.userID &&
-      allDepartmentsSigned(request.departments));
+    (req.user.role === "file_management" && allDepartmentsSigned(request.departments));
   if (!allowed) return res.status(403).json({ error: "Forbidden" });
 
   const buffer = await generateClearancePdf(request);

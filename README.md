@@ -33,7 +33,7 @@ with role-based dashboards and server-enforced visibility rules.
 
 | Role | Responsibilities | Data visibility |
 |---|---|---|
-| File Management | Creates requests, monitors progress, reviews evidence, reopens unclear signatures, approves fully signed requests, and downloads PDFs | Only requests created by that File Management account; department status and evidence are visible, but signer identity is redacted |
+| File Management | Creates requests, monitors the shared queue, reviews evidence, reopens unclear signatures, approves fully signed requests, and downloads PDFs | All clearance requests; department status and evidence are visible, but signer identity is redacted |
 | Department reviewer | Signs or reopens their own department after re-entering their password | Only their own department slice of each unlocked request |
 | IT reviewer | Owns one of IT's five checklist items and can perform the final access-revocation action | IT checklist details only; receives safe readiness flags without seeing other departments |
 | Wages or Finance reviewer | Signs their department and provides oversight | Full 13-department status, signer, timestamp, and evidence details for every request |
@@ -79,6 +79,8 @@ their own role and department without an approval step; see
    - Their reviewers also receive the full oversight dashboard.
 
 6. **File Management reviews the signed clearance**
+   - All File Management accounts share the same request queue, regardless of
+     which File Management account originally filed a request.
    - Once all 13 departments are signed, File Management can preview the
      composited PDF and inspect every evidence file.
    - An unclear department signature or IT item can be reopened. Reopening
@@ -245,7 +247,9 @@ from Git. Evidence metadata is stored on the clearance request.
 - JPG and PNG evidence is decoded directly.
 - The first page of PDF evidence is rasterized.
 - Near-white backgrounds are removed and content is cropped before placement.
-- Signer name and signing date are drawn into the matching paper-form row.
+- The first two parts of the signer's account name are drawn in the matching
+  paper-form name cell so long names remain readable; the full name remains
+  stored on the request for auditing.
 - WEBP uploads remain viewable but are not currently composited into the PDF.
 
 ## API overview

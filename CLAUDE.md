@@ -152,7 +152,8 @@ ONLY there:
    though: `POST .../departments/:deptKey/reopen` (and the itemized
    `.../items/:itemKey/reopen`) resets a signed department/item back to
    unsigned, clearing its evidence — callable either by File Management (on
-   a request they filed) or by the signing department's own reviewers
+   any request in its shared queue) or by the signing department's own
+   reviewers
      undoing their own mistake (any account from a single-mode department,
      or for an itemized item, only the one reviewer it's assigned
    to — same ownership rule as signing itself). Blocked once the request's
@@ -176,8 +177,10 @@ ONLY there:
      the JWT at login so route logic never hardcodes those two keys) get the
      full, un-redacted request — every department's status, signer, and
      evidence — via `canSeeFull()`.
-   - File Management gets neither of the above global views. They can only
-     see requests THEY created (`createdByUserID`), and a high-level summary
+   - File Management gets neither of the above reviewer views. Every File
+     Management account sees the same organizational request queue, while
+     `createdByUserID` remains an audit field recording who filed it. They get
+     a high-level summary
      (`summarizeForFileManagement()`: department status only, never signer
      identity or timestamps). The one deliberate exception is evidence
      itself: a department's uploaded photo/file is included the moment that
@@ -188,7 +191,7 @@ ONLY there:
      re-auth, resets that department/item back to `"pending"`, clears its
      evidence, and revokes `fileManagementApproved` if it had already been
      given) before approving the clearance, not just after. They can also
-     preview/download the composited PDF for their own request once every
+     preview/download the composited PDF for any request once every
      department has signed (`allDepartmentsSigned()`, same condition as
      below — not gated on `status === "completed"`, which would make it
      unreachable until after IT's own final step).
@@ -281,8 +284,9 @@ below has.
 
 - `file_management`: files requests on an employee's behalf (`POST /requests`,
   typing in the employee's data directly), sees a high-level status summary
-  of requests they filed, downloads the final signed PDF once complete.
-  Cannot see per-department signer/evidence detail.
+  of every request in the shared File Management queue, and downloads the
+  final signed PDF once complete.
+  Can review department evidence but cannot see signer identity.
 - `reviewer`: tied to one `departmentKey`. Any reviewer can sign their
   department (or, for IT, their one assigned item) once it's unlocked.
   Reviewers whose department has `hasOversightDashboard: true` (Wages,
