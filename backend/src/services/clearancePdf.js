@@ -252,30 +252,55 @@ async function drawEvidenceImage(pdfDoc, page, evidence, row) {
   drawScaledIntoSignatureCell(page, image, row);
 }
 
-// Centered both ways in the cell, and shrinks to fit before it ever
-// truncates -- at a fixed small size (the original 8pt, left-pinned to the
-// cell's edge) a short name looked lost in a much bigger cell with no
-// visual relationship to it.
-function drawCellText(page, font, text, column, row, { size = 20 } = {}) {
+// Keep signer names visually consistent instead of making short names huge
+// and long names tiny. Prefer two balanced lines when the full name does not
+// fit, then shrink only as a last resort. Every baseline is calculated from
+// the cell height, so neither line can cross a table border.
+function drawCellText(page, font, text, column, row, { size = 11 } = {}) {
   if (!text) return;
   const maxWidth = column.width - CELL_PADDING * 2;
+  const maxHeight = row.yTop - row.yBottom - CELL_PADDING;
+  const words = text.trim().split(/\s+/u);
+  let lines = [text];
 
-  let fitSize = size;
-  while (fitSize > 7 && font.widthOfTextAtSize(text, fitSize) > maxWidth) {
-    fitSize -= 1;
+  if (font.widthOfTextAtSize(text, size) > maxWidth && words.length > 1) {
+    let bestSplit = 1;
+    let bestWidth = Infinity;
+    for (let i = 1; i < words.length; i++) {
+      const firstWidth = font.widthOfTextAtSize(words.slice(0, i).join(" "), size);
+      const secondWidth = font.widthOfTextAtSize(words.slice(i).join(" "), size);
+      const widestLine = Math.max(firstWidth, secondWidth);
+      if (widestLine < bestWidth) {
+        bestWidth = widestLine;
+        bestSplit = i;
+      }
+    }
+    lines = [words.slice(0, bestSplit).join(" "), words.slice(bestSplit).join(" ")];
   }
 
-  const displayText = font.widthOfTextAtSize(text, fitSize) > maxWidth
-    ? `${text.slice(0, Math.max(1, Math.floor((maxWidth / font.widthOfTextAtSize(text, fitSize)) * text.length)))}…`
-    : text;
-  const displayWidth = font.widthOfTextAtSize(displayText, fitSize);
+  let fitSize = size;
+  const lineHeightRatio = 1.08;
+  while (
+    fitSize > 7 &&
+    (lines.some((line) => font.widthOfTextAtSize(line, fitSize) > maxWidth) ||
+      lines.length * fitSize * lineHeightRatio > maxHeight)
+  ) {
+    fitSize -= 0.5;
+  }
 
-  page.drawText(displayText, {
-    x: column.x + (column.width - displayWidth) / 2,
-    y: row.yBottom + (row.yTop - row.yBottom) / 2 - fitSize / 3,
-    size: fitSize,
-    font,
-    color: rgb(0.05, 0.35, 0.2),
+  const lineHeight = fitSize * lineHeightRatio;
+  const blockHeight = lines.length * lineHeight;
+  const firstBaseline = row.yBottom + (row.yTop - row.yBottom + blockHeight) / 2 - fitSize;
+
+  lines.forEach((line, index) => {
+    const lineWidth = font.widthOfTextAtSize(line, fitSize);
+    page.drawText(line, {
+      x: column.x + (column.width - lineWidth) / 2,
+      y: firstBaseline - index * lineHeight,
+      size: fitSize,
+      font,
+      color: rgb(0.12, 0.18, 0.16),
+    });
   });
 }
 
